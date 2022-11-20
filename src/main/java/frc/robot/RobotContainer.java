@@ -36,7 +36,6 @@ import frc.robot.vision.PhotonCamera;
 import frc.robot.vision.PhotonCameraSim;
 import frc.robot.vision.SimVisionSystem;
 import frc.robot.vision.SimVisionTarget;
-import frc.robot.vision.TrackedTargetSim;
 
 public class RobotContainer {
     private final SwerveDrive drivetrain = new SwerveDrive();
@@ -154,10 +153,6 @@ public class RobotContainer {
 
         if(result.hasTargets()) {
             var targets = result.getTargets();
-
-            //targets = TrackedTargetSim.filterVisibleTags(targets);
-            //targets = TrackedTargetSim.estimateTagAmbiguity(targets);
-            //targets = TrackedTargetSim.estimateAmbiguityUncertainty(targets);
 
             for(var target : targets) {
                 Pose3d tagPose = tagLayout.getTagPose(target.getFiducialId()).get();
