@@ -1,0 +1,145 @@
+{
+  "NTProvider": {
+    "types": {
+      "/FMSInfo": "FMSInfo",
+      "/SmartDashboard/Auto Options": "String Chooser",
+      "/SmartDashboard/Field": "Field2d",
+      "/SmartDashboard/picam Sim Field": "Field2d",
+      "/SmartDashboard/vision sim corners": "Field2d"
+    },
+    "windows": {
+      "/SmartDashboard/Auto Options": {
+        "window": {
+          "visible": true
+        }
+      },
+      "/SmartDashboard/Field": {
+        "Robot": {
+          "length": 0.800000011920929,
+          "selectable": false,
+          "width": 0.800000011920929
+        },
+        "Swerve Modules": {
+          "arrows": false,
+          "image": "swerve_module.png",
+          "length": 0.25,
+          "selectable": false,
+          "width": 0.25
+        },
+        "Trajectory": {
+          "arrows": false,
+          "selectable": false,
+          "style": "Track",
+          "width": 0.699999988079071
+        },
+        "altPoses": {
+          "arrowColor": [
+            1.0,
+            0.5333333611488342,
+            0.0,
+            255.0
+          ],
+          "arrowWeight": 1.0,
+          "color": [
+            1.0,
+            0.5316455364227295,
+            0.0,
+            255.0
+          ],
+          "length": 0.800000011920929,
+          "selectable": false,
+          "weight": 1.0,
+          "width": 0.800000011920929
+        },
+        "bestPoses": {
+          "arrowColor": [
+            0.0,
+            1.0,
+            0.5803921818733215,
+            255.0
+          ],
+          "arrowWeight": 1.0,
+          "color": [
+            0.0,
+            1.0,
+            0.5822784900665283,
+            255.0
+          ],
+          "length": 0.800000011920929,
+          "selectable": false,
+          "weight": 1.0,
+          "width": 0.800000011920929
+        },
+        "bottom": 900,
+        "height": 8.229599952697754,
+        "image": "2022-field.png",
+        "left": 74,
+        "right": 1774,
+        "tags": {
+          "arrows": false,
+          "image": "tag-green.png",
+          "length": 0.4000000059604645,
+          "selectable": false,
+          "width": 0.4000000059604645
+        },
+        "top": 50,
+        "visibleTargets": {
+          "arrows": false,
+          "image": "tag-blue.png",
+          "length": 0.4000000059604645,
+          "selectable": false,
+          "width": 0.4000000059604645
+        },
+        "width": 16.459199905395508,
+        "window": {
+          "visible": true
+        }
+      },
+      "/SmartDashboard/vision sim corners": {
+        "Robot": {
+          "arrows": false,
+          "length": 0.0,
+          "selectable": false,
+          "width": 0.0
+        },
+        "corners": {
+          "arrows": false,
+          "image": "dot-green.png",
+          "length": 0.009999999776482582,
+          "selectable": false,
+          "width": 0.009999999776482582
+        },
+        "height": 1.0,
+        "width": 1.0,
+        "window": {
+          "visible": true
+        }
+      }
+    }
+  },
+  "NetworkTables": {
+    "Persistent Values": {
+      "open": false
+    },
+    "Retained Values": {
+      "open": false
+    },
+    "transitory": {
+      "SmartDashboard": {
+        "Field": {
+          "open": true
+        },
+        "open": true,
+        "vision sim corners": {
+          "open": true
+        }
+      },
+      "photonvision": {
+        "open": true,
+        "picam": {
+          "open": true
+        }
+      }
+    }
+  }
+}
