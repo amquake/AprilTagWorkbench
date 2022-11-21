@@ -18,24 +18,20 @@ package frc.robot.vision;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.List;
 
-import org.ejml.data.DMatrixRMaj;
-import org.ejml.data.MatrixType;
-import org.ejml.dense.row.factory.DecompositionFactory_DDRM;
 import org.ejml.simple.SimpleMatrix;
 import org.opencv.calib3d.Calib3d;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfDouble;
-import org.opencv.core.MatOfFloat;
 import org.opencv.core.MatOfInt;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.MatOfPoint3f;
 import org.opencv.core.Point;
 import org.opencv.core.Point3;
+import org.opencv.core.Rect;
 import org.opencv.imgproc.Imgproc;
 import org.photonvision.targeting.TargetCorner;
 
@@ -43,10 +39,7 @@ import edu.wpi.first.cscore.CameraServerCvJNI;
 import edu.wpi.first.math.MatBuilder;
 import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.Nat;
-import edu.wpi.first.math.Num;
-import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.Vector;
-import edu.wpi.first.math.geometry.CoordinateAxis;
 import edu.wpi.first.math.geometry.CoordinateSystem;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation3d;
@@ -163,6 +156,16 @@ public final class OpenCVHelp {
         return corners;
     }
 
+    /**
+     * Project object points from the 3d world into the 2d camera image.
+     * The camera properties(intrinsics, distortion) determine the results of
+     * this projection.
+     * 
+     * @param camPose The current camera pose in the 3d world
+     * @param camProp The properties of this camera
+     * @param objectTranslations The 3d points to be projected
+     * @return The 2d points in pixels which correspond to the image of the 3d points on the camera
+     */
     public static TargetCorner[] projectPoints(
             Pose3d camPose, SimCamProperties camProp,
             Translation3d... objectTranslations) {
@@ -209,7 +212,28 @@ public final class OpenCVHelp {
 
         return corners;
     }
-    public static double getPolygonArea(TargetCorner... corners) {
+
+    /**
+     * Get the rectangle which bounds this contour. This is useful for finding the center of a bounded
+     * contour or the size of the bounding box.
+     * 
+     * @param corners The corners defining this contour
+     * @return Rectangle bounding the contour created by the given corners
+     */
+    public static Rect getBoundingRect(TargetCorner... corners) {
+        var corn = targetCornersToMat(corners);
+        var rect = Imgproc.boundingRect(corn);
+        corn.release();
+        return rect;
+    }
+    /**
+     * Get the area in pixels of this target's contour. It's important to note that this may
+     * be different from the area of the bounding rectangle around the contour.
+     * 
+     * @param corners The corners defining this contour
+     * @return Area in pixels (units of corner x/y)
+     */
+    public static double getContourAreaPx(TargetCorner... corners) {
         var temp = targetCornersToMat(corners);
         var corn = new MatOfPoint(temp.toArray());
         temp.release();
@@ -225,11 +249,28 @@ public final class OpenCVHelp {
             points[i] = tempPoints[indices[i]];
         }
         corn.fromArray(points);
-        // calculate area of the contour
+        // calculate area of the (convex hull) contour
         double area = Imgproc.contourArea(corn);
         corn.release();
         return area;
     }
+
+    /**
+     * Finds the transformation(s) that map the camera's pose to the target pose.
+     * The camera's pose relative to the target is determined by the supplied
+     * 3d points of the target's model and their associated 2d points imaged by the camera.
+     * 
+     * <p>For planar targets, there may be an alternate solution which is plausible given
+     * the 2d image points. This has an associated "ambiguity" which describes the
+     * ratio of reprojection error between the "best" and "alternate" solution.
+     * 
+     * @param camProp The properties of this camera
+     * @param modelTrls The translations of the object corners. These should have the object
+     *     pose as their origin.
+     * @param imageCorners The projection of these 3d object points into the 2d camera image
+     * @return The resulting transformation(s) that map the camera pose to the target pose
+     *     and the ambiguity if alternate solutions are also available.
+     */
     public static PNPResults solvePNP(
             SimCamProperties camProp, Translation3d[] modelTrls, TargetCorner[] imageCorners) {
         // translate to opencv classes
@@ -309,6 +350,7 @@ public final class OpenCVHelp {
     private static final Rotation3d wpilib = new Rotation3d(
         new MatBuilder<>(Nat.N3(), Nat.N3()).fill(0, 1, 0, 0, 0, 1, 1, 0, 0)
     ).plus(new Rotation3d(0, 0, Math.PI));
+
     private static Transform3d convertOpenCVtoPhotonPose(Transform3d camToTarg) {
         return new Transform3d(
             camToTarg.getTranslation(),
@@ -316,9 +358,19 @@ public final class OpenCVHelp {
         );
     }
 
+    /**
+     * Pair of camera-to-target transformations and the associated ambiguity from
+     * the ratio of their reprojection errors, calculated by
+     * {@link OpenCVHelp#solvePNP(SimCamProperties, Translation3d[], TargetCorner[])}
+     */
     public static class PNPResults {
         public final Transform3d best;
+        /**
+         * Alternate, ambiguous solution from solvepnp. This may be an empty transform
+         * if no alternate solution is found.
+         */
         public final Transform3d alt;
+        /** If no alternate solution is found, this is 0 */
         public final double ambiguity;
         public PNPResults(Transform3d best, Transform3d alt, double ambiguity) {
             this.best = best;

@@ -271,7 +271,7 @@ public class SimVisionSystem {
             // estimate pixel noise
             targetCorners = camSim.prop.estPixelNoise(targetCorners);
             // find contour area
-            double areaPixels = OpenCVHelp.getPolygonArea(targetCorners);
+            double areaPixels = OpenCVHelp.getContourAreaPx(targetCorners);
             double areaPercent = areaPixels / camSim.prop.getResArea() * 100;
 
             // projected target can't be detected, skip to next
@@ -328,7 +328,7 @@ public class SimVisionSystem {
      * @return If the target area is large enough and the corners are inside
      *     the camera's FOV
      * @see OpenCVHelp#projectPoints(Pose3d, SimCamProperties, Translation3d...)
-     * @see OpenCVHelp#getPolygonArea(TargetCorner...)
+     * @see OpenCVHelp#getContourAreaPx(TargetCorner...)
      */
     public boolean canSeeCorners(double areaPercent, TargetCorner... corners) {
         // corner is outside of resolution
