@@ -277,9 +277,7 @@ public final class OpenCVHelp {
             }
         }
 
-        best = CoordinateSystem.convert(best, CoordinateSystem.NWU(), CoordinateSystem.EDN());
         best = convertOpenCVtoPhotonPose(best);
-        alt = CoordinateSystem.convert(alt, CoordinateSystem.NWU(), CoordinateSystem.EDN());
         alt = convertOpenCVtoPhotonPose(alt);
         
         var results = new PNPResults(best, alt, ambiguity);
@@ -294,7 +292,6 @@ public final class OpenCVHelp {
         }
         System.err.println("reproj: "+reprojectionError.dump());
         */
-        
 
         // release our Mats from native memory
         objectPoints.release();
@@ -313,16 +310,10 @@ public final class OpenCVHelp {
         new MatBuilder<>(Nat.N3(), Nat.N3()).fill(0, 1, 0, 0, 0, 1, 1, 0, 0)
     ).plus(new Rotation3d(0, 0, Math.PI));
     private static Transform3d convertOpenCVtoPhotonPose(Transform3d camToTarg) {
-        // CameraToTarget _should_ be in opencv-land EDN
-        var nwu = CoordinateSystem.convert(
-            new Pose3d(
-                camToTarg.getTranslation(),
-                camToTarg.getRotation()
-            ),
-            CoordinateSystem.EDN(),
-            CoordinateSystem.NWU()
+        return new Transform3d(
+            camToTarg.getTranslation(),
+            wpilib.rotateBy(camToTarg.getRotation())
         );
-        return new Transform3d(nwu.getTranslation(), wpilib.rotateBy(nwu.getRotation()));
     }
 
     public static class PNPResults {
