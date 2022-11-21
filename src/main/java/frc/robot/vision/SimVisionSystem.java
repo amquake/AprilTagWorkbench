@@ -277,13 +277,11 @@ public class SimVisionSystem {
             // projected target can't be detected, skip to next
             if(!canSeeCorners(areaPercent, targetCorners)) return;
 
-            var pnpSim = OpenCVHelp.solvePNP(camSim.prop, tgt.getModel().cornerOffsets, targetCorners);
-
-            // Rough approximation of the alternate solution, which is (so far) always incorrect.
-            var camToTargAlt = new Transform3d(
-                rel.camToTarg.getTranslation(),
-                rel.camToTarg.getRotation().unaryMinus() // flipped
-            );
+            var pnpSim = new OpenCVHelp.PNPResults(new Transform3d(), new Transform3d(), 0);
+            // only do 3d estimation if we have a planar target
+            if(tgt.getModel().isPlanar) {
+                pnpSim = OpenCVHelp.solvePNP(camSim.prop, tgt.getModel().cornerOffsets, targetCorners);
+            }
 
             visibleTgtList.add(
                 new PhotonTrackedTarget(
