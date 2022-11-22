@@ -13,6 +13,7 @@ import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Transform2d;
 import edu.wpi.first.math.kinematics.ChassisSpeeds;
 import edu.wpi.first.math.kinematics.SwerveDriveKinematics;
+import edu.wpi.first.math.kinematics.SwerveDriveOdometry;
 import edu.wpi.first.math.kinematics.SwerveModulePosition;
 import edu.wpi.first.math.kinematics.SwerveModuleState;
 import edu.wpi.first.math.numbers.*;
@@ -23,7 +24,10 @@ import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.SPI.Port;
 import edu.wpi.first.wpilibj.simulation.ADXRS450_GyroSim;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import edu.wpi.first.wpilibj2.command.CommandBase;
+import edu.wpi.first.wpilibj2.command.InstantCommand;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
+import static frc.robot.RobotConstants.*;
 import frc.robot.auto.AutoConstants;
 import frc.robot.util.LogUtil;
 
@@ -47,6 +51,7 @@ public class SwerveDrive extends SubsystemBase {
     private final ADXRS450_Gyro gyro = new ADXRS450_Gyro(Port.kOnboardCS0);
     
     private final SwerveDrivePoseEstimator<N7, N7, N5> poseEstimator;
+    private final SwerveDriveOdometry perfOdometry;
     private ChassisSpeeds targetChassisSpeeds = new ChassisSpeeds();
     private boolean isFieldRelative = true;
 
@@ -72,6 +77,9 @@ public class SwerveDrive extends SubsystemBase {
         thetaController.setTolerance(kThetaPositionTolerance, kThetaVelocityTolerance);
         pathController.setEnabled(true); // disable for feedforward-only auto
 
+        var stateStdDevs = VecBuilder.fill(0.05, 0.05, Units.degreesToRadians(5), 0.05, 0.05, 0.05, 0.05);
+        var localStdDevs = VecBuilder.fill(Units.degreesToRadians(0.01), 0.01, 0.01, 0.01, 0.01);
+        var visionStdDevs = VecBuilder.fill(0.1, 0.1, Units.degreesToRadians(5));
         poseEstimator = new SwerveDrivePoseEstimator<N7, N7, N5>(
             Nat.N7(),
             Nat.N7(),
@@ -80,10 +88,11 @@ public class SwerveDrive extends SubsystemBase {
             new Pose2d(),
             getModulePositions(),
             kinematics,
-            VecBuilder.fill(0.05, 0.05, Units.degreesToRadians(5), 0.05, 0.05, 0.05, 0.05),
-            VecBuilder.fill(Units.degreesToRadians(0.01), 0.01, 0.01, 0.01, 0.01),
-            VecBuilder.fill(0.5, 0.5, Units.degreesToRadians(30))
+            stateStdDevs,
+            localStdDevs,
+            visionStdDevs
         );
+        perfOdometry = new SwerveDriveOdometry(kinematics, getPerfGyroYaw(), getPerfModulePositions());
 
         gyroSim = new ADXRS450_GyroSim(gyro);
     }
@@ -96,6 +105,7 @@ public class SwerveDrive extends SubsystemBase {
 
         // display our robot (and individual modules) pose on the field
         poseEstimator.update(getGyroYaw(), getModuleStates(), getModulePositions());
+        perfOdometry.update(getPerfGyroYaw(), getPerfModulePositions());
     }
 
     /**
@@ -186,6 +196,9 @@ public class SwerveDrive extends SubsystemBase {
     public void stop(){
         drive(0, 0, 0, true);
     }
+    public CommandBase stopC() {
+        return new InstantCommand(this::stop, this);
+    }
 
     /**
      * Changes whether drive methods use field or robot-oriented control.
@@ -201,6 +214,7 @@ public class SwerveDrive extends SubsystemBase {
 
     public void zeroGyro(){
         gyro.reset();
+        perfGyroAngle = new Rotation2d();
     }
     public void addVisionMeasurement(Pose2d measurement, double latencySeconds){
         poseEstimator.addVisionMeasurement(
@@ -217,6 +231,10 @@ public class SwerveDrive extends SubsystemBase {
     }
     public void resetOdometry(Pose2d pose){
         poseEstimator.resetPosition(pose, getGyroYaw(), getModulePositions());
+        perfOdometry.resetPosition(getPerfGyroYaw(), getPerfModulePositions(), pose);
+    }
+    public void resetNoisyOdometry(Pose2d pose) {
+        poseEstimator.resetPosition(pose, getGyroYaw(), getModulePositions());
     }
     public void resetPathController(){
         xController.reset();
@@ -232,6 +250,9 @@ public class SwerveDrive extends SubsystemBase {
     public Pose2d getPose(double secondsAgo) {
         return poseEstimator.getEstimatedPosition(secondsAgo);
     }
+    public Pose2d getPerfPose() {
+        return perfOdometry.getPoseMeters();
+    }
     /**
      * Swerve drive rotation on the field reported by odometry.
      */
@@ -243,6 +264,9 @@ public class SwerveDrive extends SubsystemBase {
      */
     public Rotation2d getGyroYaw(){
         return gyro.getRotation2d();
+    }
+    public Rotation2d getPerfGyroYaw() {
+        return perfGyroAngle;
     }
 
     public double getLinearVelocity(){
@@ -266,12 +290,28 @@ public class SwerveDrive extends SubsystemBase {
             swerveMods[3].getAbsoluteState()
         };
     }
+    public SwerveModuleState[] getPerfModuleStates(){
+        return new SwerveModuleState[]{
+            swerveMods[0].getPerfAbsoluteState(),
+            swerveMods[1].getPerfAbsoluteState(),
+            swerveMods[2].getPerfAbsoluteState(),
+            swerveMods[3].getPerfAbsoluteState()
+        };
+    }
     public SwerveModulePosition[] getModulePositions(){
         return new SwerveModulePosition[]{
             swerveMods[0].getPosition(),
             swerveMods[1].getPosition(),
             swerveMods[2].getPosition(),
             swerveMods[3].getPosition()
+        };
+    }
+    public SwerveModulePosition[] getPerfModulePositions(){
+        return new SwerveModulePosition[]{
+            swerveMods[0].getPerfPosition(),
+            swerveMods[1].getPerfPosition(),
+            swerveMods[2].getPerfPosition(),
+            swerveMods[3].getPerfPosition()
         };
     }
     /**
@@ -281,7 +321,9 @@ public class SwerveDrive extends SubsystemBase {
         Pose2d[] modulePoses = new Pose2d[4];
         for(int i=0;i<4;i++){
             SwerveModule module = swerveMods[i];
-            modulePoses[i] = getPose().transformBy(new Transform2d(module.getModuleConstants().centerOffset, module.getAbsoluteHeading()));
+            modulePoses[i] = getPose().transformBy(
+                new Transform2d(module.getModuleConstants().centerOffset, module.getAbsoluteHeading())
+            );
         }
         return modulePoses;
     }
@@ -290,6 +332,9 @@ public class SwerveDrive extends SubsystemBase {
     }
     public ChassisSpeeds getChassisSpeeds(){
         return kinematics.toChassisSpeeds(getModuleStates());
+    }
+    public ChassisSpeeds getPerfChassisSpeeds() {
+        return kinematics.toChassisSpeeds(getPerfModuleStates());
     }
 
     public HolonomicDriveController getPathController(){
@@ -322,6 +367,8 @@ public class SwerveDrive extends SubsystemBase {
 
     //----- Simulation
     private final ADXRS450_GyroSim gyroSim; // simulate gyro
+    private Rotation2d perfGyroAngle = new Rotation2d();
+    private Rotation2d perfGyroRate = new Rotation2d();
 
     @Override
     public void simulationPeriodic(){
@@ -329,10 +376,13 @@ public class SwerveDrive extends SubsystemBase {
             module.simulationPeriodic();
         }
 
-        double chassisOmega = getChassisSpeeds().omegaRadiansPerSecond;
-        chassisOmega = Math.toDegrees(-chassisOmega);
+        double chassisOmega = Math.toDegrees(-getChassisSpeeds().omegaRadiansPerSecond);
         gyroSim.setRate(chassisOmega);
-        gyroSim.setAngle(gyro.getAngle() + chassisOmega*0.02);
+        gyroSim.setAngle(gyro.getAngle() + chassisOmega*kDT);
+
+        double perfChassisOmega = getPerfChassisSpeeds().omegaRadiansPerSecond;
+        perfGyroRate = new Rotation2d(perfChassisOmega*kDT);
+        perfGyroAngle = perfGyroAngle.plus(perfGyroRate);
     }
 
     public double getCurrentDraw(){

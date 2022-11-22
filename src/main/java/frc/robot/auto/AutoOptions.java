@@ -35,6 +35,7 @@ public class AutoOptions {
                     AutoConstants.kMediumSpeedConfig,
                     true
                 ),
+                drivetrain.stopC(),
                 new WaitCommand(1),
                 autoFollowTrajectory(
                     drivetrain, 
@@ -42,6 +43,7 @@ public class AutoOptions {
                     AutoConstants.kMediumSpeedConfig,
                     false
                 ),
+                drivetrain.stopC(),
                 new WaitCommand(1),
                 autoFollowTrajectory(
                     drivetrain, 

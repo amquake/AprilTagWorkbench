@@ -24,6 +24,10 @@ public class Robot extends TimedRobot {
 
     private Command autoCommand;
 
+    public Robot() {
+        super(RobotConstants.kDT);
+    }
+
     @Override
     public void robotInit() {
         container = new RobotContainer();

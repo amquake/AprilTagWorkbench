@@ -8,13 +8,13 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.photonvision.targeting.PhotonPipelineResult;
-
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Rotation3d;
+import edu.wpi.first.math.geometry.Transform2d;
 import edu.wpi.first.math.geometry.Transform3d;
+import edu.wpi.first.math.geometry.Translation2d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.trajectory.Trajectory;
 import edu.wpi.first.math.util.Units;
@@ -43,6 +43,8 @@ public class RobotContainer {
     private final PhotonCamera camera1;
     private final PhotonCamera camera2;
     private final SimVisionSystem visionSim;
+
+    private boolean correcting = false;
     
     public RobotContainer() {
         autoOptions.submit();
@@ -68,7 +70,7 @@ public class RobotContainer {
                         0
                     )
                 )
-            ),
+            )/*,
             new PhotonCameraSim(
                 camera2,
                 SimCamProperties.PI4_PICAM2_480p,
@@ -85,6 +87,7 @@ public class RobotContainer {
                     )
                 )
             )
+            */
         );
 
         try {
@@ -131,7 +134,7 @@ public class RobotContainer {
             .onTrue(runOnce(()->controller.setDriveSpeed(OCXboxController.kSpeedMax)))
             .onFalse(runOnce(()->controller.setDriveSpeed(OCXboxController.kSpeedDefault)));
 
-        controller.rightTriggerButton
+        controller.yButton
         .whileTrue(run(()->{
             var cameraSim = visionSim.getCameraSim(camera1.name);
             cameraSim.adjustCamera(
@@ -140,7 +143,7 @@ public class RobotContainer {
                 )
             );
         }));
-        controller.leftTriggerButton
+        controller.aButton
             .whileTrue(run(()->{
                 var cameraSim = visionSim.getCameraSim(camera1.name);
                 cameraSim.adjustCamera(
@@ -148,6 +151,19 @@ public class RobotContainer {
                         new Transform3d(new Translation3d(), new Rotation3d(0, -0.01, 0))
                     )
                 );
+            }));
+        
+        controller.rightTriggerButton
+            .onTrue(runOnce(()-> correcting = true))
+            .onFalse(runOnce(() -> correcting = false));
+
+        controller.leftTriggerButton
+            .onTrue(runOnce(()->{
+                var noise = new Transform2d(
+                    new Translation2d(Math.random()*2-1, Math.random()*2-1),
+                    new Rotation2d(Math.random()*4-2)
+                );
+                drivetrain.resetNoisyOdometry(drivetrain.getPose().plus(noise));
             }));
     }
 
@@ -163,23 +179,26 @@ public class RobotContainer {
 
     //----- Simulation
     public void simulationPeriodic() {
-        visionSim.update(drivetrain.getPose());
+        visionSim.update(drivetrain.getPerfPose());
+        field.getObject("Noisy Robot").setPose(drivetrain.getPose());
         List<Pose2d> bestPoses = new ArrayList<>();
         List<Pose2d> altPoses = new ArrayList<>();
 
         for(var camera : List.of(camera1, camera2)) {
             var cameraSim = visionSim.getCameraSim(camera.name);
-            for(var target : camera.getLatestResult().getTargets()) {
+            var result = camera.getLatestResult();
+            for(var target : result.getTargets()) {
                 Pose3d tagPose = tagLayout.getTagPose(target.getFiducialId()).get();
                 Transform3d camToBest = target.getBestCameraToTarget();
                 Transform3d camToAlt = target.getAlternateCameraToTarget();
 
-                bestPoses.add(
-                    tagPose
-                        .transformBy(camToBest.inverse())
-                        .transformBy(cameraSim.getRobotToCamera().inverse())
-                        .toPose2d()
-                );
+                var bestPose = tagPose
+                    .transformBy(camToBest.inverse())
+                    .transformBy(cameraSim.getRobotToCamera().inverse())
+                    .toPose2d();
+                if(correcting) drivetrain.addVisionMeasurement(bestPose, result.getLatencyMillis()/1000.0);
+
+                bestPoses.add(bestPose);
                 altPoses.add(
                     tagPose
                         .transformBy(camToAlt.inverse())

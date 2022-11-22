@@ -2,6 +2,8 @@ package frc.robot.subsystems.drivetrain;
 
 import static frc.robot.subsystems.drivetrain.SwerveConstants.*;
 
+import java.util.Random;
+
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.controller.ProfiledPIDController;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -19,6 +21,7 @@ import edu.wpi.first.wpilibj.motorcontrol.PWMSparkMax;
 import edu.wpi.first.wpilibj.simulation.EncoderSim;
 import edu.wpi.first.wpilibj.simulation.FlywheelSim;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import static frc.robot.RobotConstants.*;
 import frc.robot.subsystems.drivetrain.SwerveConstants.Module;
 
 public class SwerveModule {
@@ -110,22 +113,35 @@ public class SwerveModule {
     public Rotation2d getAbsoluteHeading(){
         return Rotation2d.fromRadians(steerEncoder.getDistance()).plus(new Rotation2d());
     }
-
     /**
      * @return State describing absolute module rotation and velocity in meters per second
      */
     public SwerveModuleState getAbsoluteState(){
-        double velocity = driveEncoder.getRate();
-        Rotation2d angle = getAbsoluteHeading();
-        return new SwerveModuleState(velocity, angle);
+        return new SwerveModuleState(
+            driveEncoder.getRate(),
+            getAbsoluteHeading()
+        );
+    }
+    public SwerveModuleState getPerfAbsoluteState() {
+        return new SwerveModuleState(
+            perfDriveVelocity,
+            getAbsoluteHeading()
+        );
     }
 
     public void resetPosition(){
         driveEncoder.reset();
+        perfDriveDistance = driveEncoder.getDistance();
     }
     public SwerveModulePosition getPosition() {
         return new SwerveModulePosition(
             driveEncoder.getDistance(),
+            getAbsoluteHeading()
+        );
+    }
+    public SwerveModulePosition getPerfPosition() {
+        return new SwerveModulePosition(
+            perfDriveDistance,
             getAbsoluteHeading()
         );
     }
@@ -159,6 +175,11 @@ public class SwerveModule {
         kDriveGearRatio
     );
     private final EncoderSim driveEncoderSim;
+    private Random rand = new Random();
+    private double perfDriveDistance = 0;
+    private double perfDriveVelocity = 0;
+    private final double kDriveVelocityNoiseRatio = 0.04; // scaled with velocity
+    private final double kDriveAccelNoiseRatio = 0.06; // scaled with accel, added to velocity noise
     private final FlywheelSim steeringSim = new FlywheelSim(
         LinearSystemId.identifyVelocitySystem(kSteerFF.kv, kSteerFF.ka),
         DCMotor.getFalcon500(1),
@@ -179,17 +200,23 @@ public class SwerveModule {
         else steerVoltage = Math.min(0, steerVoltage+kSteerFF.ks);
         if(DriverStation.isDisabled()) steerVoltage = 0;
         steeringSim.setInputVoltage(steerVoltage);
-        
-        driveWheelSim.update(0.02);
-        steeringSim.update(0.02);
+
+        driveWheelSim.update(kDT);
+        steeringSim.update(kDT);
 
         // update our simulated devices with our simulated physics results
-        driveEncoderSim.setRate(driveWheelSim.getAngularVelocityRadPerSec() / (2 * Math.PI) * kWheelCircumference);
-        driveEncoderSim.setDistance(driveEncoderSim.getDistance() + driveEncoderSim.getRate() * 0.02);
-        
+        double perfDriveAccel = -perfDriveVelocity;
+        perfDriveVelocity = driveWheelSim.getAngularVelocityRadPerSec() / (2 * Math.PI) * kWheelCircumference;
+        perfDriveAccel += perfDriveVelocity;
+        perfDriveAccel /= kDT;
+        double velocityNoise = Math.abs(perfDriveVelocity*kDriveVelocityNoiseRatio);
+        velocityNoise += Math.abs(perfDriveAccel*kDriveAccelNoiseRatio);
+        driveEncoderSim.setRate(rand.nextGaussian(perfDriveVelocity, velocityNoise));
+        perfDriveDistance = perfDriveDistance + perfDriveVelocity * kDT;
+        driveEncoderSim.setDistance(driveEncoderSim.getDistance() + driveEncoderSim.getRate() * kDT);
 
         steerEncoderSim.setRate(steeringSim.getAngularVelocityRadPerSec());
-        steerEncoderSim.setDistance(steerEncoderSim.getDistance() + steerEncoderSim.getRate() * 0.02);
+        steerEncoderSim.setDistance(steerEncoderSim.getDistance() + steerEncoderSim.getRate() * kDT);
     }
 
     public double getDriveCurrentDraw(){
