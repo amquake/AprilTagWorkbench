@@ -11,7 +11,7 @@ import edu.wpi.first.math.Vector;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.numbers.*;
 
-/**
+    /**
      * Calibration and performance values for this camera.
      * 
      * <p>The resolution will affect the accuracy of projected(3d->2d) target corners and
@@ -122,15 +122,71 @@ import edu.wpi.first.math.numbers.*;
         public Matrix<N3, N3> getIntrinsics() {
             return camIntrinsics.copy();
         }
-        //TODO: account for principal point
+        /**
+         * The yaw from the principal point of this camera to the pixel x value.
+         */
+        public Rotation2d getPixelYaw(double pixelX) {
+            double fx = camIntrinsics.get(0, 0);
+            // account for principal point not being centered
+            double cx = camIntrinsics.get(0, 2);
+            double xOffset = cx - pixelX;
+            return new Rotation2d(
+                fx,
+                xOffset
+            );
+        }
+        /**
+         * The pitch from the principal point of this camera to the pixel y value.
+         */
+        public Rotation2d getPixelPitch(double pixelY) {
+            double fy = camIntrinsics.get(1, 1);
+            // account for principal point not being centered
+            double cy = camIntrinsics.get(1, 2);
+            double yOffset = cy - pixelY;
+            return new Rotation2d(
+                fy,
+                yOffset
+            );
+        }
         public Rotation2d getHorizFOV() {
-            return new Rotation2d(2 * Math.atan2(resWidth/2.0, camIntrinsics.get(0, 0)));
+            // sum of FOV left and right principal point
+            var left = getPixelYaw(0);
+            var right = getPixelYaw(resWidth);
+            return left.minus(right);
         }
         public Rotation2d getVertFOV() {
-            return new Rotation2d(2 * Math.atan2(resHeight/2.0, camIntrinsics.get(1, 1)));
+            // sum of FOV above and below principal point
+            var above = getPixelPitch(0);
+            var below = getPixelPitch(resHeight);
+            return above.minus(below);
         }
         public Rotation2d getDiagFOV() {
             return new Rotation2d(Math.hypot(getHorizFOV().getRadians(), getVertFOV().getRadians()));
+        }
+        /** Width:height */
+        public double getAspectRatio() {
+            return (double)resWidth / resHeight;
+        }
+        /**
+         * Returns these pixel points as fractions of a 1x1 square image.
+         * This means the camera's aspect ratio and resolution will be used, and the
+         * points' x and y may not reach all portions(e.g. a wide aspect ratio means
+         * some of the top and bottom of the square image is unreachable).
+         * @param corners Pixel points on this camera's image
+         * @return Points mapped to an image of 1x1 resolution
+         */
+        public TargetCorner[] getPixelFraction(TargetCorner... corners) {
+            double resLarge = getAspectRatio() > 1 ? resWidth : resHeight;
+
+            var newCorners = corners.clone();
+            for(int i=0; i<corners.length; i++) {
+                // offset to account for aspect ratio
+                newCorners[i] = new TargetCorner(
+                    (corners[i].x + (resLarge-resWidth)/2.0) / resLarge,
+                    (corners[i].y + (resLarge-resHeight)/2.0) / resLarge
+                );
+            }
+            return newCorners;
         }
         public Vector<N5> getDistCoeffs() {
             return new Vector<>(distCoeffs);

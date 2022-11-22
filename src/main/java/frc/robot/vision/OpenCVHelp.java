@@ -17,7 +17,6 @@
 package frc.robot.vision;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 
 import org.ejml.simple.SimpleMatrix;
 import org.opencv.calib3d.Calib3d;
@@ -37,7 +36,6 @@ import org.photonvision.targeting.TargetCorner;
 
 import edu.wpi.first.cscore.CameraServerCvJNI;
 import edu.wpi.first.math.MatBuilder;
-import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.Nat;
 import edu.wpi.first.math.Vector;
 import edu.wpi.first.math.geometry.CoordinateSystem;
@@ -93,8 +91,11 @@ public final class OpenCVHelp {
      * EDN coordinate system.
      */
     public static Translation3d tvecToTranslation(Mat tvecInput) {
-        double[] data = new double[3];
-        tvecInput.get(0, 0, data);
+        float[] data = new float[3];
+        var wrapped = new Mat(tvecInput.rows(), tvecInput.cols(), CvType.CV_32F);
+        tvecInput.convertTo(wrapped, CvType.CV_32F);
+        wrapped.get(0, 0, data);
+        wrapped.release();
         return CoordinateSystem.convert(
             new Translation3d(data[0], data[1], data[2]),
             CoordinateSystem.EDN(),
@@ -126,12 +127,15 @@ public final class OpenCVHelp {
      * (angle = norm, and axis = rvec / norm)
      */
     public static Rotation3d rvecToRotation(Mat rvecInput) {
-        double[] data = new double[3];
-        rvecInput.get(0, 0, data);
-        Vector<N3> axis = new Vector<>(
-            Matrix.mat(Nat.N3(), Nat.N1())
-                .fill(Arrays.copyOf(data, 3))
-        );
+        float[] data = new float[3];
+        var wrapped = new Mat(rvecInput.rows(), rvecInput.cols(), CvType.CV_32F);
+        rvecInput.convertTo(wrapped, CvType.CV_32F);
+        wrapped.get(0, 0, data);
+        wrapped.release();
+        Vector<N3> axis = new Vector<>(Nat.N3());
+        axis.set(0, 0, data[0]);
+        axis.set(1, 0, data[1]);
+        axis.set(2, 0, data[2]);
         return CoordinateSystem.convert(
             new Rotation3d(axis, Core.norm(rvecInput)),
             CoordinateSystem.EDN(),
@@ -172,11 +176,10 @@ public final class OpenCVHelp {
         // set object points relative to camera so we dont have to use rvec/tvec
         var relativeTrls = objectTranslations.clone();
         for(int i=0; i<objectTranslations.length; i++) {
-            var trl = new Pose3d(
+            relativeTrls[i] = new Pose3d(
                 objectTranslations[i],
                 new Rotation3d()
             ).relativeTo(camPose).getTranslation();
-            relativeTrls[i] = trl;
         }
         
         // translate to opencv classes

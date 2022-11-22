@@ -4,7 +4,6 @@
 
 package frc.robot;
 
-import edu.wpi.first.cscore.CameraServerCvJNI;
 import edu.wpi.first.wpilibj.RobotBase;
 
 /**
