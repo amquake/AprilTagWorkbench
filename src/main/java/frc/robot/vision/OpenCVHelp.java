@@ -116,9 +116,7 @@ public final class OpenCVHelp {
             CoordinateSystem.NWU(),
             CoordinateSystem.EDN()
         );
-        var angle = rotation.getAngle();
-        var axis = rotation.getAxis().times(angle);
-        return new MatOfPoint3f(new Point3(axis.getData()));
+        return new MatOfPoint3f(new Point3(rotation.getQuaternion().toRotationVector().getData()));
     }
     /**
      * Returns a 3d rotation from this {@link Mat}.
@@ -192,15 +190,13 @@ public final class OpenCVHelp {
         // project to 2d
         Calib3d.projectPoints(objectPoints, rvec, tvec, cameraMatrix, distCoeffs, imagePoints);
         
-        /*
-        System.err.println("--------------------------");
-        System.err.println("rvec: "+rvec.dump());
-        System.err.println("tvec: "+tvec.dump());
-        System.err.println("cam: "+cameraMatrix.dump());
-        System.err.println("dist: "+distortionCoeffs.dump());
-        System.err.println("object: "+objectPoints.dump());
-        System.err.println("image: "+imagePoints.dump());
-        */
+        // System.err.println("--------------------------");
+        // System.err.println("rvec: "+rvec.dump());
+        // System.err.println("tvec: "+tvec.dump());
+        // System.err.println("cam: "+cameraMatrix.dump());
+        // System.err.println("dist: "+distCoeffs.dump());
+        // System.err.println("object: "+objectPoints.dump());
+        // System.err.println("image: "+imagePoints.dump());
         
         // turn 2d point Mat into TargetCorners
         var corners = matToTargetCorners(imagePoints);
@@ -325,17 +321,15 @@ public final class OpenCVHelp {
         alt = convertOpenCVtoPhotonPose(alt);
         
         var results = new PNPResults(best, alt, ambiguity);
-
-        /*
-        System.err.println("--------------------------");
-        System.err.println("object: "+objectPoints.dump());
-        System.err.println("image: "+imagePoints.dump());
-        for(int i=0; i<tvecs.size(); i++) {
-            System.err.println("rvec["+i+"]: "+rvecs.get(i).dump());
-            System.err.println("tvec["+i+"]: "+tvecs.get(i).dump());
-        }
-        System.err.println("reproj: "+reprojectionError.dump());
-        */
+ 
+        // System.err.println("--------------------------");
+        // System.err.println("object: "+objectPoints.dump());
+        // System.err.println("image: "+imagePoints.dump());
+        // for(int i=0; i<tvecs.size(); i++) {
+        //     System.err.println("rvec["+i+"]: "+rvecs.get(i).dump());
+        //     System.err.println("tvec["+i+"]: "+tvecs.get(i).dump());
+        // }
+        // System.err.println("reproj: "+reprojectionError.dump());
 
         // release our Mats from native memory
         objectPoints.release();
@@ -351,7 +345,11 @@ public final class OpenCVHelp {
     }
 
     private static final Rotation3d wpilib = new Rotation3d(
-        new MatBuilder<>(Nat.N3(), Nat.N3()).fill(0, 1, 0, 0, 0, 1, 1, 0, 0)
+        new MatBuilder<>(Nat.N3(), Nat.N3()).fill(
+            0, 1, 0,
+            0, 0, 1,
+            1, 0, 0
+        )
     ).plus(new Rotation3d(0, 0, Math.PI));
 
     private static Transform3d convertOpenCVtoPhotonPose(Transform3d camToTarg) {

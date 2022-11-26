@@ -3,7 +3,6 @@ package frc.robot.subsystems.drivetrain;
 import static frc.robot.auto.AutoConstants.*;
 
 import edu.wpi.first.math.Matrix;
-import edu.wpi.first.math.Nat;
 import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.controller.HolonomicDriveController;
 import edu.wpi.first.math.controller.PIDController;
@@ -50,7 +49,7 @@ public class SwerveDrive extends SubsystemBase {
 
     private final ADXRS450_Gyro gyro = new ADXRS450_Gyro(Port.kOnboardCS0);
     
-    private final SwerveDrivePoseEstimator<N7, N7, N5> poseEstimator;
+    private final SwerveDrivePoseEstimator poseEstimator;
     private final SwerveDriveOdometry perfOdometry;
     private ChassisSpeeds targetChassisSpeeds = new ChassisSpeeds();
     private boolean isFieldRelative = true;
@@ -77,19 +76,14 @@ public class SwerveDrive extends SubsystemBase {
         thetaController.setTolerance(kThetaPositionTolerance, kThetaVelocityTolerance);
         pathController.setEnabled(true); // disable for feedforward-only auto
 
-        var stateStdDevs = VecBuilder.fill(0.05, 0.05, Units.degreesToRadians(5), 0.05, 0.05, 0.05, 0.05);
-        var localStdDevs = VecBuilder.fill(Units.degreesToRadians(0.01), 0.01, 0.01, 0.01, 0.01);
-        var visionStdDevs = VecBuilder.fill(0.1, 0.1, Units.degreesToRadians(5));
-        poseEstimator = new SwerveDrivePoseEstimator<N7, N7, N5>(
-            Nat.N7(),
-            Nat.N7(),
-            Nat.N5(),
-            getGyroYaw(),
-            new Pose2d(),
-            getModulePositions(),
+        var stateStdDevs = VecBuilder.fill(0.1, 0.1, 0.1);
+        var visionStdDevs = VecBuilder.fill(10, 10, 50);
+        poseEstimator = new SwerveDrivePoseEstimator(
             kinematics,
+            getGyroYaw(),
+            getModulePositions(),
+            new Pose2d(),
             stateStdDevs,
-            localStdDevs,
             visionStdDevs
         );
         perfOdometry = new SwerveDriveOdometry(kinematics, getPerfGyroYaw(), getPerfModulePositions());
@@ -104,7 +98,7 @@ public class SwerveDrive extends SubsystemBase {
         }
 
         // display our robot (and individual modules) pose on the field
-        poseEstimator.update(getGyroYaw(), getModuleStates(), getModulePositions());
+        poseEstimator.update(getGyroYaw(), getModulePositions());
         perfOdometry.update(getPerfGyroYaw(), getPerfModulePositions());
     }
 
@@ -230,11 +224,11 @@ public class SwerveDrive extends SubsystemBase {
         );
     }
     public void resetOdometry(Pose2d pose){
-        poseEstimator.resetPosition(pose, getGyroYaw(), getModulePositions());
+        poseEstimator.resetPosition(getGyroYaw(), getModulePositions(), pose);
         perfOdometry.resetPosition(getPerfGyroYaw(), getPerfModulePositions(), pose);
     }
     public void resetNoisyOdometry(Pose2d pose) {
-        poseEstimator.resetPosition(pose, getGyroYaw(), getModulePositions());
+        poseEstimator.resetPosition(getGyroYaw(), getModulePositions(), pose);
     }
     public void resetPathController(){
         xController.reset();

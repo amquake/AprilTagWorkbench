@@ -28,6 +28,7 @@ import frc.robot.vision.SimCamProperties;
 import frc.robot.vision.PhotonCamera;
 import frc.robot.vision.PhotonCameraSim;
 import frc.robot.vision.SimVisionSystem;
+import frc.robot.vision.SimVisionTarget;
 
 public class RobotContainer {
     private final SwerveDrive drivetrain = new SwerveDrive();
@@ -66,7 +67,7 @@ public class RobotContainer {
                     ),
                     new Rotation3d(
                         0,
-                        Math.toRadians(10),
+                        -Math.toRadians(10),
                         0
                     )
                 )
@@ -139,7 +140,7 @@ public class RobotContainer {
             var cameraSim = visionSim.getCameraSim(camera1.name);
             cameraSim.adjustCamera(
                 cameraSim.getRobotToCamera().plus(
-                    new Transform3d(new Translation3d(), new Rotation3d(0, 0.01, 0))
+                    new Transform3d(new Translation3d(), new Rotation3d(0, -0.01, 0))
                 )
             );
         }));
