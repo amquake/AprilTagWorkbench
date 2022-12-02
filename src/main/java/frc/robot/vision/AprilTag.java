@@ -6,9 +6,7 @@ package frc.robot.vision;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-
 import edu.wpi.first.math.geometry.Pose3d;
-
 import java.util.Objects;
 
 @SuppressWarnings("MemberName")

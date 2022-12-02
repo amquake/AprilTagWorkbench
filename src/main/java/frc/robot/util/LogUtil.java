@@ -17,7 +17,6 @@ public final class LogUtil {
             pose.getX(),
             pose.getY(),
             pose.getZ(),
-            rot.getAngle(),
             rot.getX(),
             rot.getY(),
             rot.getZ()

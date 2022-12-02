@@ -67,7 +67,7 @@ public class RobotContainer {
                     ),
                     new Rotation3d(
                         0,
-                        -Math.toRadians(10),
+                        -Math.toRadians(18),
                         0
                     )
                 )
@@ -149,7 +149,7 @@ public class RobotContainer {
                 var cameraSim = visionSim.getCameraSim(camera1.name);
                 cameraSim.adjustCamera(
                     cameraSim.getRobotToCamera().plus(
-                        new Transform3d(new Translation3d(), new Rotation3d(0, -0.01, 0))
+                        new Transform3d(new Translation3d(), new Rotation3d(0, 0.01, 0))
                     )
                 );
             }));
@@ -182,8 +182,9 @@ public class RobotContainer {
     public void simulationPeriodic() {
         visionSim.update(drivetrain.getPerfPose());
         field.getObject("Noisy Robot").setPose(drivetrain.getPose());
-        List<Pose2d> bestPoses = new ArrayList<>();
-        List<Pose2d> altPoses = new ArrayList<>();
+
+        var bestPoses = new ArrayList<Pose2d>();
+        var altPoses = new ArrayList<Pose2d>();
 
         for(var camera : List.of(camera1, camera2)) {
             var cameraSim = visionSim.getCameraSim(camera.name);
@@ -197,6 +198,7 @@ public class RobotContainer {
                     .transformBy(camToBest.inverse())
                     .transformBy(cameraSim.getRobotToCamera().inverse())
                     .toPose2d();
+                
                 if(correcting) drivetrain.addVisionMeasurement(bestPose, result.getLatencyMillis()/1000.0);
 
                 bestPoses.add(bestPose);

@@ -6,14 +6,13 @@ package frc.robot.vision;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.geometry.Translation3d;
-import edu.wpi.first.wpilibj.DriverStation;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -31,24 +30,29 @@ import java.util.Optional;
  * <p>The JSON format contains two top-level objects, "tags" and "field". The "tags" object is a
  * list of all AprilTags contained within a layout. Each AprilTag serializes to a JSON object
  * containing an ID and a Pose3d. The "field" object is a descriptor of the size of the field in
- * meters with "width" and "height" values. This is to account for arbitrary field sizes when
- * mirroring the poses.
+ * meters with "width" and "length" values. This is to account for arbitrary field sizes when
+ * transforming the poses.
  *
  * <p>Pose3ds are assumed to be measured from the bottom-left corner of the field, when the blue
- * alliance is at the left. Pose3ds will automatically be returned as passed in when calling {@link
- * AprilTagFieldLayout#getTagPose(int)}. Setting an alliance color via {@link
- * AprilTagFieldLayout#setAlliance(DriverStation.Alliance)} will mirror the poses returned from
- * {@link AprilTagFieldLayout#getTagPose(int)} to be correct relative to the other alliance.
+ * alliance is at the left. By default, Pose3ds will be returned as declared when calling {@link
+ * AprilTagFieldLayout#getTagPose(int)}. {@link #setOrigin(OriginPosition)} can be used to transform
+ * the poses returned from {@link AprilTagFieldLayout#getTagPose(int)} to be correct relative to a
+ * different coordinate frame.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE)
 public class AprilTagFieldLayout {
+  public enum OriginPosition {
+    kBlueAllianceWallRightSide,
+    kRedAllianceWallRightSide,
+  }
+
   private final Map<Integer, AprilTag> m_apriltags = new HashMap<>();
 
   @JsonProperty(value = "field")
   private FieldDimensions m_fieldDimensions;
 
-  private boolean m_mirror;
+  private Pose3d m_origin;
 
   /**
    * Construct a new AprilTagFieldLayout with values imported from a JSON file.
@@ -71,14 +75,15 @@ public class AprilTagFieldLayout {
         new ObjectMapper().readValue(path.toFile(), AprilTagFieldLayout.class);
     m_apriltags.putAll(layout.m_apriltags);
     m_fieldDimensions = layout.m_fieldDimensions;
+    setOrigin(OriginPosition.kBlueAllianceWallRightSide);
   }
 
   /**
    * Construct a new AprilTagFieldLayout from a list of {@link AprilTag} objects.
    *
    * @param apriltags List of {@link AprilTag}.
-   * @param fieldLength Length of the field in meters.
-   * @param fieldWidth Width of the field in meters.
+   * @param fieldLength Length of the field the layout is representing in meters.
+   * @param fieldWidth Width of the field the layout is representing in meters.
    */
   public AprilTagFieldLayout(List<AprilTag> apriltags, double fieldLength, double fieldWidth) {
     this(apriltags, new FieldDimensions(fieldLength, fieldWidth));
@@ -93,23 +98,56 @@ public class AprilTagFieldLayout {
       m_apriltags.put(tag.ID, tag);
     }
     m_fieldDimensions = fieldDimensions;
+    setOrigin(OriginPosition.kBlueAllianceWallRightSide);
   }
 
+  /**
+   * Returns a List of the {@link AprilTag AprilTags} used in this layout.
+   *
+   * @return The {@link AprilTag AprilTags} used in this layout.
+   */
   @JsonProperty("tags")
   public List<AprilTag> getTags() {
     return new ArrayList<>(m_apriltags.values());
   }
 
   /**
-   * Set the alliance that your team is on.
+   * Sets the origin based on a predefined enumeration of coordinate frame origins. The origins are
+   * calculated from the field dimensions.
    *
-   * <p>This changes the {@link #getTagPose(int)} method to return the correct pose for your
-   * alliance.
+   * <p>This transforms the Pose3ds returned by {@link #getTagPose(int)} to return the correct pose
+   * relative to a predefined coordinate frame.
    *
-   * @param alliance The alliance to mirror poses for.
+   * @param origin The predefined origin
    */
-  public void setAlliance(DriverStation.Alliance alliance) {
-    m_mirror = alliance == DriverStation.Alliance.Red;
+  @JsonIgnore
+  public void setOrigin(OriginPosition origin) {
+    switch (origin) {
+      case kBlueAllianceWallRightSide:
+        setOrigin(new Pose3d());
+        break;
+      case kRedAllianceWallRightSide:
+        setOrigin(
+            new Pose3d(
+                new Translation3d(m_fieldDimensions.fieldLength, m_fieldDimensions.fieldWidth, 0),
+                new Rotation3d(0, 0, Math.PI)));
+        break;
+      default:
+        throw new IllegalArgumentException("Unsupported enum value");
+    }
+  }
+
+  /**
+   * Sets the origin for tag pose transformation.
+   *
+   * <p>This transforms the Pose3ds returned by {@link #getTagPose(int)} to return the correct pose
+   * relative to the provided origin.
+   *
+   * @param origin The new origin for tag transformations
+   */
+  @JsonIgnore
+  public void setOrigin(Pose3d origin) {
+    m_origin = origin;
   }
 
   /**
@@ -125,16 +163,7 @@ public class AprilTagFieldLayout {
     if (tag == null) {
       return Optional.empty();
     }
-    Pose3d pose = tag.pose;
-    if (m_mirror) {
-      pose =
-          pose.relativeTo(
-              new Pose3d(
-                  new Translation3d(
-                      m_fieldDimensions.fieldWidth, m_fieldDimensions.fieldLength, 0.0),
-                  new Rotation3d(0.0, 0.0, Math.PI)));
-    }
-    return Optional.of(pose);
+    return Optional.of(tag.pose.relativeTo(m_origin));
   }
 
   /**
@@ -175,33 +204,33 @@ public class AprilTagFieldLayout {
   public boolean equals(Object obj) {
     if (obj instanceof AprilTagFieldLayout) {
       var other = (AprilTagFieldLayout) obj;
-      return m_apriltags.equals(other.m_apriltags) && m_mirror == other.m_mirror;
+      return m_apriltags.equals(other.m_apriltags) && m_origin.equals(other.m_origin);
     }
     return false;
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(m_apriltags, m_mirror);
+    return Objects.hash(m_apriltags, m_origin);
   }
 
   @JsonIgnoreProperties(ignoreUnknown = true)
   @JsonAutoDetect(getterVisibility = JsonAutoDetect.Visibility.NONE)
   private static class FieldDimensions {
     @SuppressWarnings("MemberName")
-    @JsonProperty(value = "width")
-    public double fieldWidth;
-
-    @SuppressWarnings("MemberName")
     @JsonProperty(value = "length")
     public double fieldLength;
 
+    @SuppressWarnings("MemberName")
+    @JsonProperty(value = "width")
+    public double fieldWidth;
+
     @JsonCreator()
     FieldDimensions(
-        @JsonProperty(required = true, value = "width") double fieldWidth,
-        @JsonProperty(required = true, value = "length") double fieldLength) {
-      this.fieldWidth = fieldWidth;
+        @JsonProperty(required = true, value = "length") double fieldLength,
+        @JsonProperty(required = true, value = "width") double fieldWidth) {
       this.fieldLength = fieldLength;
+      this.fieldWidth = fieldWidth;
     }
   }
 }

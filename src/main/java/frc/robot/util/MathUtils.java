@@ -2,32 +2,44 @@ package frc.robot.util;
 
 import java.util.Arrays;
 
-import edu.wpi.first.math.VecBuilder;
-import edu.wpi.first.math.Vector;
-import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Rotation3d;
-import edu.wpi.first.math.numbers.N3;
 
 public class MathUtils {
     public static Pose3d calcAvg(Pose3d... values){
         if(values.length == 0) return new Pose3d();
-        Vector<N3> avgAxis = VecBuilder.fill(
-            Arrays.stream(values).mapToDouble(pose -> pose.getRotation().getAxis().get(0, 0)).average().orElse(0),
-            Arrays.stream(values).mapToDouble(pose -> pose.getRotation().getAxis().get(1, 0)).average().orElse(0),
-            Arrays.stream(values).mapToDouble(pose -> pose.getRotation().getAxis().get(2, 0)).average().orElse(0)
-        );
-        double avgAngle = Arrays.stream(values).mapToDouble(pose -> pose.getRotation().getAngle()).average().orElse(0);
-        Rotation3d averageRot = new Rotation3d(
-            avgAxis,
-            avgAngle
-        );
+        double[] trlXVals = new double[values.length];
+        double[] trlYVals = new double[values.length];
+        double[] trlZVals = new double[values.length];
+        double[] rotXCosVals = new double[values.length];
+        double[] rotXSinVals = new double[values.length];
+        double[] rotYCosVals = new double[values.length];
+        double[] rotYSinVals = new double[values.length];
+        double[] rotZCosVals = new double[values.length];
+        double[] rotZSinVals = new double[values.length];
+        for(int i = 0; i < values.length; i++) {
+            var v = values[i];
+            trlXVals[i] = v.getX();
+            trlYVals[i] = v.getY();
+            trlZVals[i] = v.getZ();
+            rotXCosVals[i] = Math.cos(v.getRotation().getX());
+            rotXSinVals[i] = Math.sin(v.getRotation().getX());
+            rotYCosVals[i] = Math.cos(v.getRotation().getY());
+            rotYSinVals[i] = Math.sin(v.getRotation().getY());
+            rotZCosVals[i] = Math.cos(v.getRotation().getZ());
+            rotZSinVals[i] = Math.sin(v.getRotation().getZ());
+        }
         return new Pose3d(
-            calcAvg(Arrays.stream(values).mapToDouble(pose -> pose.getX()).toArray()),
-            calcAvg(Arrays.stream(values).mapToDouble(pose -> pose.getY()).toArray()),
-            calcAvg(Arrays.stream(values).mapToDouble(pose -> pose.getZ()).toArray()),
-            averageRot
+            calcAvg(trlXVals),
+            calcAvg(trlYVals),
+            calcAvg(trlZVals),
+            new Rotation3d(
+                new Rotation2d(calcAvg(rotXCosVals), calcAvg(rotXSinVals)).getRadians(),
+                new Rotation2d(calcAvg(rotYCosVals), calcAvg(rotYSinVals)).getRadians(),
+                new Rotation2d(calcAvg(rotZCosVals), calcAvg(rotZSinVals)).getRadians()
+            )
         );
     }
     public static double calcAvg(double... values){
@@ -35,54 +47,49 @@ public class MathUtils {
         return Arrays.stream(values).average().getAsDouble();
     }
 
-    public static Pose3d calcStdDev(Pose3d... values){
+    public static Pose3d calcStdDev(Pose3d avgPose, Pose3d... values){
         if(values.length == 0) return new Pose3d();
-        Pose3d avgPose = calcAvg(values);
 
-        double xAxisDev = 0;
-        double yAxisDev = 0;
-        double zAxisDev = 0;
-        double angleDev = 0;
-        for(Pose3d v : values){
-            xAxisDev += Math.pow(
-                v.getRotation().getAxis().get(0, 0) - avgPose.getRotation().getAxis().get(0, 0),
+        double[] trlXVals = new double[values.length];
+        double[] trlYVals = new double[values.length];
+        double[] trlZVals = new double[values.length];
+        double rotXDev = 0;
+        double rotYDev = 0;
+        double rotZDev = 0;
+        for(int i = 0; i < values.length; i++){
+            var v = values[i];
+            trlXVals[i] = v.getX();
+            trlYVals[i] = v.getY();
+            trlZVals[i] = v.getZ();
+            rotXDev += Math.pow(
+                MathUtil.angleModulus(v.getRotation().getX() - avgPose.getRotation().getX()),
                 2
             );
-            yAxisDev += Math.pow(
-                v.getRotation().getAxis().get(1, 0) - avgPose.getRotation().getAxis().get(1, 0),
+            rotYDev += Math.pow(
+                MathUtil.angleModulus(v.getRotation().getY() - avgPose.getRotation().getY()),
                 2
             );
-            zAxisDev += Math.pow(
-                v.getRotation().getAxis().get(2, 0) - avgPose.getRotation().getAxis().get(2, 0),
-                2
-            );
-            angleDev += Math.pow(
-                v.getRotation().getAngle() - avgPose.getRotation().getAngle(),
+            rotZDev += Math.pow(
+                MathUtil.angleModulus(v.getRotation().getZ() - avgPose.getRotation().getZ()),
                 2
             );
         }
-        xAxisDev /= values.length;
-        xAxisDev = Math.sqrt(xAxisDev);
-        yAxisDev /= values.length;
-        yAxisDev = Math.sqrt(yAxisDev);
-        zAxisDev /= values.length;
-        zAxisDev = Math.sqrt(zAxisDev);
-        angleDev /= values.length;
-        angleDev = Math.sqrt(angleDev);
+        rotXDev /= values.length;
+        rotXDev = Math.sqrt(rotXDev);
+        rotYDev /= values.length;
+        rotYDev = Math.sqrt(rotYDev);
+        rotZDev /= values.length;
+        rotZDev = Math.sqrt(rotZDev);
 
         return new Pose3d(
-            calcStdDev(Arrays.stream(values).mapToDouble(pose -> pose.getX()).toArray()),
-            calcStdDev(Arrays.stream(values).mapToDouble(pose -> pose.getY()).toArray()),
-            calcStdDev(Arrays.stream(values).mapToDouble(pose -> pose.getZ()).toArray()),
-            new Rotation3d(
-                VecBuilder.fill(xAxisDev, yAxisDev, zAxisDev),
-                angleDev
-            )
+            calcStdDev(avgPose.getX(), trlXVals),
+            calcStdDev(avgPose.getY(), trlYVals),
+            calcStdDev(avgPose.getZ(), trlZVals),
+            new Rotation3d(rotXDev, rotYDev, rotZDev)
         );
     }
-    public static double calcStdDev(double... values){
+    public static double calcStdDev(double mean, double... values){
         if(values.length == 0) return 0;
-        double mean = calcAvg(values);
         double variance = 0;
         for(double v : values){
             variance += Math.pow((v - mean), 2);
