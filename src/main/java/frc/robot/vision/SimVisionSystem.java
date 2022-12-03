@@ -26,7 +26,6 @@ package frc.robot.vision;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
-import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.interpolation.TimeInterpolatableBuffer;
 import edu.wpi.first.math.util.Units;
 import edu.wpi.first.wpilibj.Timer;
@@ -40,8 +39,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-
-import org.photonvision.targeting.TargetCorner;
 
 public class SimVisionSystem {
 
@@ -205,39 +202,12 @@ public class SimVisionSystem {
 
             // update camera's visible targets
             var trackedTargets = camSim.process(latencyMillis, cameraPose, allTargets);
-            var visibleCorners = new ArrayList<TargetCorner>();
-            var bestCorners = new ArrayList<TargetCorner>();
             // display results
             for(var target : trackedTargets) {
                 visibleTargets.add(
                     cameraPose.transformBy(target.getBestCameraToTarget()).toPose2d()
                 );
-                visibleCorners.addAll(target.getCorners());
-                if(bestCorners.size()==0) bestCorners.addAll(target.getCorners());
             }
-            var dbgCorners = camSim.getDebugCorners();
-            dbgCorners.getObject("corners").setPoses(
-                List.of(camSim.prop.getPixelFraction(visibleCorners.toArray(new TargetCorner[0])))
-                    .stream()
-                    .map(p -> new Pose2d(p.x, 1-p.y, new Rotation2d()))
-                    .collect(Collectors.toList())
-            );
-            dbgCorners.getObject("bestCorners").setPoses(
-                List.of(camSim.prop.getPixelFraction(bestCorners.toArray(new TargetCorner[0])))
-                    .stream()
-                    .map(p -> new Pose2d(p.x, 1-p.y, new Rotation2d()))
-                    .collect(Collectors.toList())
-            );
-            dbgCorners.getObject("aspectRatio").setPoses(
-                List.of(camSim.prop.getPixelFraction(
-                    new TargetCorner(0, 0),
-                    new TargetCorner(camSim.prop.getResWidth(), 0),
-                    new TargetCorner(camSim.prop.getResWidth(), camSim.prop.getResHeight()),
-                    new TargetCorner(0, camSim.prop.getResHeight())
-                )).stream()
-                    .map(p -> new Pose2d(p.x, 1-p.y, new Rotation2d()))
-                    .collect(Collectors.toList())
-            );
         }
         if(visibleTargets.size() != 0) dbgField.getObject("visibleTargets").setPoses(visibleTargets);
         if(cameraPose2ds.size() != 0) dbgField.getObject("cameras").setPoses(cameraPose2ds);

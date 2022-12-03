@@ -30,6 +30,7 @@ import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.Nat;
 import edu.wpi.first.math.StateSpaceUtil;
 import edu.wpi.first.math.VecBuilder;
+import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Transform3d;
@@ -45,6 +46,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 import org.ejml.simple.SimpleMatrix;
 import org.photonvision.PhotonTargetSortMode;
@@ -279,6 +281,9 @@ public class PhotonCameraSim {
     public List<PhotonTrackedTarget> process(
             double latencyMillis, Pose3d cameraPose, List<SimVisionTarget> targets) {
         var visibleTgts = new ArrayList<PhotonTrackedTarget>();
+        var dbgVisCorners = new ArrayList<TargetCorner>();
+        var dbgBestCorners = new ArrayList<TargetCorner>();
+
         for(var tgt : targets) {
             // pose isn't visible, skip to next
             if(!canSeeTargetPose(cameraPose, tgt)) continue;
@@ -295,9 +300,7 @@ public class PhotonCameraSim {
             // estimate pixel noise
             targetCorners = prop.estPixelNoise(targetCorners);
             // find the 2d yaw/pitch
-            var boundingRect = OpenCVHelp.getBoundingRect(targetCorners);
-            var yaw = prop.getPixelYaw(boundingRect.x);
-            var pitch = prop.getPixelPitch(boundingRect.y);
+            var boundingCenterRot = prop.getPixelRot(targetCorners);
             // find contour area
             double areaPixels = OpenCVHelp.getContourAreaPx(targetCorners);
             double areaPercent = areaPixels / prop.getResArea() * 100;
@@ -313,10 +316,10 @@ public class PhotonCameraSim {
 
             visibleTgts.add(
                 new PhotonTrackedTarget(
-                    yaw.getDegrees(),
-                    pitch.getDegrees(),
+                    Math.toDegrees(boundingCenterRot.getZ()),
+                    Math.toDegrees(boundingCenterRot.getY()),
                     areaPercent,
-                    0.0,
+                    Math.toDegrees(boundingCenterRot.getX()),
                     tgt.id,
                     pnpSim.best,
                     pnpSim.alt,
@@ -324,7 +327,33 @@ public class PhotonCameraSim {
                     List.of(targetCorners)
                 )
             );
+
+            dbgVisCorners.addAll(List.of(targetCorners));
+            if(dbgBestCorners.size()==0) dbgBestCorners.addAll(List.of(targetCorners));
         }
+
+        dbgCorners.getObject("corners").setPoses(
+            List.of(prop.getPixelFraction(dbgVisCorners.toArray(new TargetCorner[0])))
+                .stream()
+                .map(p -> new Pose2d(p.x, 1-p.y, new Rotation2d()))
+                .collect(Collectors.toList())
+        );
+        dbgCorners.getObject("bestCorners").setPoses(
+            List.of(prop.getPixelFraction(dbgBestCorners.toArray(new TargetCorner[0])))
+                .stream()
+                .map(p -> new Pose2d(p.x, 1-p.y, new Rotation2d()))
+                .collect(Collectors.toList())
+        );
+        dbgCorners.getObject("aspectRatio").setPoses(
+            List.of(prop.getPixelFraction(
+                new TargetCorner(0, 0),
+                new TargetCorner(prop.getResWidth(), 0),
+                new TargetCorner(prop.getResWidth(), prop.getResHeight()),
+                new TargetCorner(0, prop.getResHeight())
+            )).stream()
+                .map(p -> new Pose2d(p.x, 1-p.y, new Rotation2d()))
+                .collect(Collectors.toList())
+        );
 
         // put this simulated data to NT
         submitProcessedFrame(latencyMillis, PhotonTargetSortMode.Largest, visibleTgts);

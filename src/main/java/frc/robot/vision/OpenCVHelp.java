@@ -213,6 +213,33 @@ public final class OpenCVHelp {
     }
 
     /**
+     * Undistort 2d image points using a given camera's intrinsics and distortion.
+     * 
+     * <p>2d image points from {@link #projectPoints(Pose3d, SimCamProperties, Translation3d...)}
+     * will naturally be distorted, so this operation is important if the image points
+     * need to be directly used (e.g. 2d yaw/pitch).
+     * @param camProp The properties of this camera
+     * @param corners The distorted image points
+     * @return The undistorted image points
+     */
+    public static TargetCorner[] undistortCorners(SimCamProperties camProp, TargetCorner... corners) {
+        var points_in = targetCornersToMat(corners);
+        var points_out = new MatOfPoint2f();
+        var cameraMatrix = matrixToMat(camProp.getIntrinsics().getStorage());
+        var distCoeffs = matrixToMat(camProp.getDistCoeffs().getStorage());
+
+        Calib3d.undistortImagePoints(points_in, points_out, cameraMatrix, distCoeffs);
+        var corners_out = matToTargetCorners(points_out);
+
+        points_in.release();
+        points_out.release();
+        cameraMatrix.release();
+        distCoeffs.release();
+
+        return corners_out;
+    }
+
+    /**
      * Get the rectangle which bounds this contour. This is useful for finding the center of a bounded
      * contour or the size of the bounding box.
      * 

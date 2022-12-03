@@ -9,6 +9,7 @@ import edu.wpi.first.math.Nat;
 import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.Vector;
 import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.numbers.*;
 
     /**
@@ -122,6 +123,9 @@ import edu.wpi.first.math.numbers.*;
         public Matrix<N3, N3> getIntrinsics() {
             return camIntrinsics.copy();
         }
+        public TargetCorner[] undistort(TargetCorner... corners) {
+            return OpenCVHelp.undistortCorners(this, corners);
+        }
         /**
          * The yaw from the principal point of this camera to the pixel x value.
          */
@@ -137,6 +141,8 @@ import edu.wpi.first.math.numbers.*;
         }
         /**
          * The pitch from the principal point of this camera to the pixel y value.
+         * 
+         * <p><b>CLOCKWISE-POSITIVE!
          */
         public Rotation2d getPixelPitch(double pixelY) {
             double fy = camIntrinsics.get(1, 1);
@@ -146,6 +152,34 @@ import edu.wpi.first.math.numbers.*;
             return new Rotation2d(
                 fy,
                 yOffset
+            );
+        }
+        /**
+         * Finds the yaw and pitch to the center of the rectangle bounding the given
+         * target corners.
+         * 
+         * <p><b>PITCH IS CLOCKWISE-POSITIVE!
+         */
+        public Rotation3d getPixelRot(TargetCorner... corners) {
+            if(corners == null || corners.length == 0) return new Rotation3d();
+            TargetCorner rectCenter;
+            if(corners.length == 1) rectCenter = corners[0];
+            else if(corners.length == 2) rectCenter = new TargetCorner(
+                        (corners[0].x+corners[1].x)/2.0,
+                        (corners[0].y+corners[1].y)/2.0
+                    );
+            else {
+                var boundingRect = OpenCVHelp.getBoundingRect(corners);
+                rectCenter = new TargetCorner(
+                    boundingRect.x + boundingRect.width/2.0,
+                    boundingRect.y + boundingRect.height/2.0
+                );
+            }
+            
+            return new Rotation3d(
+                0,
+                getPixelPitch(rectCenter.y).getRadians(),
+                getPixelYaw(rectCenter.x).getRadians()
             );
         }
         public Rotation2d getHorizFOV() {

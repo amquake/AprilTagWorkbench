@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.geometry.Pose3d;
+import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation3d;
@@ -13,7 +14,7 @@ import edu.wpi.first.math.util.Units;
 
 public class OpenCVTest {
     private static final double kTrlDelta = 0.005;
-    private static final double kRotDeltaDeg = 0.5;
+    private static final double kRotDeltaDeg = 0.25;
 
     public static void assertSame(Translation3d trl1, Translation3d trl2) {
         assertEquals(0, trl1.getX()-trl2.getX(), kTrlDelta, "Trl X Diff");
@@ -73,22 +74,26 @@ public class OpenCVTest {
             circulation += (targetCorners[(i+1)%4].x-targetCorners[i].x)*(targetCorners[(i+1)%4].y+targetCorners[i].y);
         }
         assertTrue(circulation < 0, "2d points aren't clockwise");
-        var boundingRect1 = OpenCVHelp.getBoundingRect(targetCorners);
+        // undo projection distortion
+        targetCorners = prop.undistort(targetCorners);
+        var boundingCenterRot1 = prop.getPixelRot(targetCorners);
         cameraPose = cameraPose.plus(new Transform3d(new Translation3d(), new Rotation3d(0, 0.25, 0.25)));
         targetCorners = OpenCVHelp.projectPoints(
             cameraPose,
             prop,
             target.getFieldCorners()
         );
-        var boundingRect2 = OpenCVHelp.getBoundingRect(targetCorners);
-        var yawDiff = prop.getPixelYaw(boundingRect2.x).minus(prop.getPixelYaw(boundingRect1.x));
-        var pitchDiff = prop.getPixelPitch(boundingRect2.y).minus(prop.getPixelPitch(boundingRect1.y)).unaryMinus();
+        var boundingCenterRot2 = prop.getPixelRot(targetCorners);
+        var yaw2d = new Rotation2d(boundingCenterRot2.getZ());
+        var pitch2d = new Rotation2d(boundingCenterRot2.getY());
+        var yawDiff = yaw2d.minus(new Rotation2d(boundingCenterRot1.getZ()));
+        var pitchDiff = pitch2d.minus(new Rotation2d(boundingCenterRot1.getY()));
         assertTrue(yawDiff.getRadians() < 0, "2d points don't follow yaw");
-        assertTrue(pitchDiff.getRadians() < 0, "2d points don't follow pitch");
+        assertTrue(pitchDiff.unaryMinus().getRadians() < 0, "2d points don't follow pitch");
         var actualRelation = new SimVisionTarget.CameraTargetRelation(cameraPose, target.getPose());
         assertEquals(
             actualRelation.camToTargPitch.getDegrees(),
-            pitchDiff.getDegrees(),
+            pitchDiff.unaryMinus().getDegrees() * Math.cos(yaw2d.getRadians()), // adjust for spherical perspective
             kRotDeltaDeg,
             "2d pitch doesn't match 3d"
         );
