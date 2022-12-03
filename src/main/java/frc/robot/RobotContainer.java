@@ -8,6 +8,8 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.photonvision.targeting.PhotonPipelineResult;
+
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -43,6 +45,8 @@ public class RobotContainer {
     private NetworkTableInstance instance;
     private final PhotonCamera camera1;
     private final PhotonCamera camera2;
+    private final List<PhotonCamera> cameras;
+    private List<PhotonPipelineResult> lastResults;
     private final SimVisionSystem visionSim;
 
     private boolean correcting = false;
@@ -54,6 +58,9 @@ public class RobotContainer {
 
         camera1 = new PhotonCamera(instance, "front");
         camera2 = new PhotonCamera(instance, "back");
+        cameras = List.of(camera1, camera2);
+        lastResults = new ArrayList<>(cameras.size());
+        cameras.forEach(c -> lastResults.add(new PhotonPipelineResult()));
 
         visionSim = new SimVisionSystem("main",
             new PhotonCameraSim(
@@ -186,9 +193,18 @@ public class RobotContainer {
         var bestPoses = new ArrayList<Pose2d>();
         var altPoses = new ArrayList<Pose2d>();
 
-        for(var camera : List.of(camera1, camera2)) {
+        boolean updated = false;
+        for(int i = 0; i < cameras.size(); i++) {
+            var camera = cameras.get(i);
             var cameraSim = visionSim.getCameraSim(camera.name);
             var result = camera.getLatestResult();
+
+            if(result.equals(lastResults.get(i))) continue;
+            else {
+                lastResults.set(i, result);
+                updated = true;
+            }
+
             for(var target : result.getTargets()) {
                 Pose3d tagPose = tagLayout.getTagPose(target.getFiducialId()).get();
                 Transform3d camToBest = target.getBestCameraToTarget();
@@ -210,8 +226,10 @@ public class RobotContainer {
                 );
             }
         }
-        field.getObject("bestPoses").setPoses(bestPoses);
-        field.getObject("altPoses").setPoses(altPoses);
+        if(updated) {
+            field.getObject("bestPoses").setPoses(bestPoses);
+            field.getObject("altPoses").setPoses(altPoses);
+        }
     }
 
     public double getCurrentDraw(){

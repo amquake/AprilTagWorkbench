@@ -184,12 +184,12 @@ public class SwerveDrivePoseEstimator {
       return;
     }
 
-    // Step 2: Apply the odometry delta in the time since the vision timestamp to estimate the current
-    // vision pose
+    // Step 2: Apply the odometry delta in the time since the vision timestamp to estimate the
+    // "current" vision pose
     var delta = new Transform2d(old.get(), m_odometry.getPoseMeters());
     visionRobotPoseMeters = visionRobotPoseMeters.transformBy(delta);
 
-    // Step 2: Measure the twist between the odometry pose and the vision pose
+    // Step 2: Measure the twist between the odometry pose and the "current" vision pose
     var twist = m_previousEstimate.log(visionRobotPoseMeters);
 
     // Step 3: We should not trust the twist entirely, so instead we scale this twist by a Kalman

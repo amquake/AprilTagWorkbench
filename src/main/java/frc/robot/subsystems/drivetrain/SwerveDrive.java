@@ -77,7 +77,7 @@ public class SwerveDrive extends SubsystemBase {
         pathController.setEnabled(true); // disable for feedforward-only auto
 
         var stateStdDevs = VecBuilder.fill(0.1, 0.1, 0.1);
-        var visionStdDevs = VecBuilder.fill(10, 10, 50);
+        var visionStdDevs = VecBuilder.fill(1, 1, 1);
         poseEstimator = new SwerveDrivePoseEstimator(
             kinematics,
             getGyroYaw(),
