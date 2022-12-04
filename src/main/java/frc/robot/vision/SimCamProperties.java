@@ -1,6 +1,8 @@
 package frc.robot.vision;
 
+import java.util.List;
 import java.util.Random;
+import java.util.stream.Collectors;
 
 import org.photonvision.targeting.TargetCorner;
 
@@ -123,7 +125,7 @@ import edu.wpi.first.math.numbers.*;
         public Matrix<N3, N3> getIntrinsics() {
             return camIntrinsics.copy();
         }
-        public TargetCorner[] undistort(TargetCorner... corners) {
+        public List<TargetCorner> undistort(List<TargetCorner> corners) {
             return OpenCVHelp.undistortCorners(this, corners);
         }
         /**
@@ -160,13 +162,13 @@ import edu.wpi.first.math.numbers.*;
          * 
          * <p><b>PITCH IS CLOCKWISE-POSITIVE!
          */
-        public Rotation3d getPixelRot(TargetCorner... corners) {
-            if(corners == null || corners.length == 0) return new Rotation3d();
+        public Rotation3d getPixelRot(List<TargetCorner> corners) {
+            if(corners == null || corners.size() == 0) return new Rotation3d();
             TargetCorner rectCenter;
-            if(corners.length == 1) rectCenter = corners[0];
-            else if(corners.length == 2) rectCenter = new TargetCorner(
-                        (corners[0].x+corners[1].x)/2.0,
-                        (corners[0].y+corners[1].y)/2.0
+            if(corners.size() == 1) rectCenter = corners.get(0);
+            else if(corners.size() == 2) rectCenter = new TargetCorner(
+                        (corners.get(0).x+corners.get(1).x)/2.0,
+                        (corners.get(0).y+corners.get(1).y)/2.0
                     );
             else {
                 var boundingRect = OpenCVHelp.getBoundingRect(corners);
@@ -209,18 +211,18 @@ import edu.wpi.first.math.numbers.*;
          * @param corners Pixel points on this camera's image
          * @return Points mapped to an image of 1x1 resolution
          */
-        public TargetCorner[] getPixelFraction(TargetCorner... corners) {
+        public List<TargetCorner> getPixelFraction(List<TargetCorner> corners) {
             double resLarge = getAspectRatio() > 1 ? resWidth : resHeight;
 
-            var newCorners = corners.clone();
-            for(int i=0; i<corners.length; i++) {
-                // offset to account for aspect ratio
-                newCorners[i] = new TargetCorner(
-                    (corners[i].x + (resLarge-resWidth)/2.0) / resLarge,
-                    (corners[i].y + (resLarge-resHeight)/2.0) / resLarge
-                );
-            }
-            return newCorners;
+            return corners.stream()
+                .map(c -> {
+                    // offset to account for aspect ratio
+                    return new TargetCorner(
+                        (c.x + (resLarge-resWidth)/2.0) / resLarge,
+                        (c.y + (resLarge-resHeight)/2.0) / resLarge
+                    );
+                })
+                .collect(Collectors.toList());
         }
         public Vector<N5> getDistCoeffs() {
             return new Vector<>(distCoeffs);
@@ -245,22 +247,20 @@ import edu.wpi.first.math.numbers.*;
         /**
          * @return Estimate of new target corners based on this camera's noise.
          */
-        public TargetCorner[] estPixelNoise(TargetCorner... corners) {
+        public List<TargetCorner> estPixelNoise(List<TargetCorner> corners) {
             if(avgErrorPx == 0 && errorStdDevPx == 0) return corners;
 
-            var newCorners = corners.clone();
-            for(int i=0; i<corners.length; i++) {
-                var corn = corners[i];
-                // error pixels in random direction
-                double error = rand.nextGaussian(avgErrorPx, errorStdDevPx);
-                double errorAngle = rand.nextDouble(-Math.PI, Math.PI);
-
-                newCorners[i] = new TargetCorner(
-                    corn.x + error*Math.cos(errorAngle),
-                    corn.y + error*Math.sin(errorAngle)
-                );
-            }
-            return newCorners;
+            return corners.stream()
+                .map(c -> {
+                    // error pixels in random direction
+                    double error = rand.nextGaussian(avgErrorPx, errorStdDevPx);
+                    double errorAngle = rand.nextDouble(-Math.PI, Math.PI);
+                    return new TargetCorner(
+                        c.x + error*Math.cos(errorAngle),
+                        c.y + error*Math.sin(errorAngle)
+                    );
+                })
+                .collect(Collectors.toList());
         }
 
         /**

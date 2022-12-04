@@ -2,6 +2,8 @@ package frc.robot.subsystems.drivetrain;
 
 import static frc.robot.auto.AutoConstants.*;
 
+import java.util.Random;
+
 import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.controller.HolonomicDriveController;
@@ -361,6 +363,8 @@ public class SwerveDrive extends SubsystemBase {
 
     //----- Simulation
     private final ADXRS450_GyroSim gyroSim; // simulate gyro
+    private static final Random rand = new Random();
+    private static final double kGyroNoiseStdDevRadians = (1.0 / 2000.0) * (kDT / 0.02);
     private Rotation2d perfGyroAngle = new Rotation2d();
     private Rotation2d perfGyroRate = new Rotation2d();
 
@@ -370,12 +374,12 @@ public class SwerveDrive extends SubsystemBase {
             module.simulationPeriodic();
         }
 
-        double chassisOmega = Math.toDegrees(-getChassisSpeeds().omegaRadiansPerSecond);
-        gyroSim.setRate(chassisOmega);
-        gyroSim.setAngle(gyro.getAngle() + chassisOmega*kDT);
-
         double perfChassisOmega = getPerfChassisSpeeds().omegaRadiansPerSecond;
         perfGyroRate = new Rotation2d(perfChassisOmega*kDT);
+        gyroSim.setRate(perfGyroRate.unaryMinus().getDegrees());
+        gyroSim.setAngle(gyro.getAngle() + perfGyroRate.unaryMinus().getDegrees());
+        gyroSim.setAngle(rand.nextGaussian(gyro.getAngle(), Math.toDegrees(kGyroNoiseStdDevRadians)));
+        
         perfGyroAngle = perfGyroAngle.plus(perfGyroRate);
     }
 

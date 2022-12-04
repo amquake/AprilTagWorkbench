@@ -9,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.photonvision.targeting.PhotonPipelineResult;
+import org.photonvision.targeting.TargetCorner;
 
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
@@ -25,12 +26,14 @@ import edu.wpi.first.wpilibj2.command.RunCommand;
 import frc.robot.auto.AutoOptions;
 import frc.robot.common.OCXboxController;
 import frc.robot.subsystems.drivetrain.SwerveDrive;
+import frc.robot.vision.AprilTag;
 import frc.robot.vision.AprilTagFieldLayout;
+import frc.robot.vision.CameraTargetRelation;
 import frc.robot.vision.SimCamProperties;
 import frc.robot.vision.PhotonCamera;
 import frc.robot.vision.PhotonCameraSim;
 import frc.robot.vision.SimVisionSystem;
-import frc.robot.vision.SimVisionTarget;
+import frc.robot.vision.VisionEstimation;
 
 public class RobotContainer {
     private final SwerveDrive drivetrain = new SwerveDrive();
@@ -190,8 +193,12 @@ public class RobotContainer {
         visionSim.update(drivetrain.getPerfPose());
         field.getObject("Noisy Robot").setPose(drivetrain.getPose());
 
+        var visCorners = new ArrayList<TargetCorner>();
+        var visTags = new ArrayList<AprilTag>();
+
         var bestPoses = new ArrayList<Pose2d>();
         var altPoses = new ArrayList<Pose2d>();
+        var testPoses = new ArrayList<Pose2d>();
 
         boolean updated = false;
         for(int i = 0; i < cameras.size(); i++) {
@@ -206,7 +213,9 @@ public class RobotContainer {
             }
 
             for(var target : result.getTargets()) {
+                visCorners.addAll(target.getCorners());
                 Pose3d tagPose = tagLayout.getTagPose(target.getFiducialId()).get();
+                visTags.add(new AprilTag(target.getFiducialId(), tagPose));
                 Transform3d camToBest = target.getBestCameraToTarget();
                 Transform3d camToAlt = target.getAlternateCameraToTarget();
 
@@ -225,10 +234,25 @@ public class RobotContainer {
                         .toPose2d()
                 );
             }
+
+            if(result.getTargets().size() > 1) {
+                var estTrf = VisionEstimation.estimateTagsPNP(
+                    cameraSim.prop,
+                    visCorners,
+                    visTags
+                );
+                testPoses.add(
+                    new Pose3d()
+                        .plus(estTrf.best) // field-to-camera
+                        .plus(cameraSim.getRobotToCamera().inverse()) // field-to-robot
+                        .toPose2d()
+                );
+            }
         }
         if(updated) {
             field.getObject("bestPoses").setPoses(bestPoses);
             field.getObject("altPoses").setPoses(altPoses);
+            field.getObject("testPoses").setPoses(testPoses);
         }
     }
 

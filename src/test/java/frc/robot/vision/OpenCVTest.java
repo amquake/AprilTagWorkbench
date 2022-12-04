@@ -66,12 +66,14 @@ public class OpenCVTest {
         var targetCorners = OpenCVHelp.projectPoints(
             cameraPose,
             prop,
-            target.getFieldCorners()
+            target.getModel().getFieldCorners(target.getPose())
         );
         // find circulation (counter/clockwise-ness)
         double circulation = 0;
-        for(int i=0; i<targetCorners.length; i++) {
-            circulation += (targetCorners[(i+1)%4].x-targetCorners[i].x)*(targetCorners[(i+1)%4].y+targetCorners[i].y);
+        for(int i=0; i<targetCorners.size(); i++) {
+            double xDiff = targetCorners.get((i+1)%4).x - targetCorners.get(i).x;
+            double ySum = targetCorners.get((i+1)%4).y + targetCorners.get(i).y;
+            circulation += xDiff * ySum;
         }
         assertTrue(circulation < 0, "2d points aren't clockwise");
         // undo projection distortion
@@ -81,7 +83,7 @@ public class OpenCVTest {
         targetCorners = OpenCVHelp.projectPoints(
             cameraPose,
             prop,
-            target.getFieldCorners()
+            target.getModel().getFieldCorners(target.getPose())
         );
         var boundingCenterRot2 = prop.getPixelRot(targetCorners);
         var yaw2d = new Rotation2d(boundingCenterRot2.getZ());
@@ -90,7 +92,7 @@ public class OpenCVTest {
         var pitchDiff = pitch2d.minus(new Rotation2d(boundingCenterRot1.getY()));
         assertTrue(yawDiff.getRadians() < 0, "2d points don't follow yaw");
         assertTrue(pitchDiff.unaryMinus().getRadians() < 0, "2d points don't follow pitch");
-        var actualRelation = new SimVisionTarget.CameraTargetRelation(cameraPose, target.getPose());
+        var actualRelation = new CameraTargetRelation(cameraPose, target.getPose());
         assertEquals(
             actualRelation.camToTargPitch.getDegrees(),
             pitchDiff.unaryMinus().getDegrees() * Math.cos(yaw2d.getRadians()), // adjust for spherical perspective
@@ -112,14 +114,17 @@ public class OpenCVTest {
             0
         );
         var cameraPose = new Pose3d(0, 0, 0, new Rotation3d());
-        var actualRelation = new SimVisionTarget.CameraTargetRelation(cameraPose, target.getPose());
+        var actualRelation = new CameraTargetRelation(cameraPose, target.getPose());
         var targetCorners = OpenCVHelp.projectPoints(
             cameraPose,
             prop,
-            target.getFieldCorners()
+            target.getModel().getFieldCorners(target.getPose())
         );
-        var pnpSim = OpenCVHelp.solvePNP(prop, target.getModel().cornerOffsets, targetCorners);
-        var estRelation = new SimVisionTarget.CameraTargetRelation(cameraPose, cameraPose.transformBy(pnpSim.best));
+        var pnpSim = OpenCVHelp.solveTagPNP(prop, target.getModel().cornerOffsets, targetCorners);
+        var estRelation = new CameraTargetRelation(
+            cameraPose,
+            cameraPose.plus(pnpSim.best)
+        );
         assertSame(actualRelation.camToTarg, estRelation.camToTarg);
     }
 }

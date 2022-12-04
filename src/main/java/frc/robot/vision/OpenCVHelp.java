@@ -17,6 +17,9 @@
 package frc.robot.vision;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
 
 import org.ejml.simple.SimpleMatrix;
 import org.opencv.calib3d.Calib3d;
@@ -44,6 +47,7 @@ import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.numbers.*;
+import frc.robot.vision.VisionEstimation.PNPResults;
 
 public final class OpenCVHelp {
 
@@ -168,20 +172,16 @@ public final class OpenCVHelp {
      * @param objectTranslations The 3d points to be projected
      * @return The 2d points in pixels which correspond to the image of the 3d points on the camera
      */
-    public static TargetCorner[] projectPoints(
+    public static List<TargetCorner> projectPoints(
             Pose3d camPose, SimCamProperties camProp,
-            Translation3d... objectTranslations) {
-        // set object points relative to camera so we dont have to use rvec/tvec
-        var relativeTrls = objectTranslations.clone();
-        for(int i=0; i<objectTranslations.length; i++) {
-            relativeTrls[i] = new Pose3d(
-                objectTranslations[i],
-                new Rotation3d()
-            ).relativeTo(camPose).getTranslation();
-        }
+            List<Translation3d> objectTranslations) {
+        // set object points relative to camera so we dont have to fill rvec/tvec
+        var relativeTrls = objectTranslations.stream()
+            .map(t -> new Pose3d(t, new Rotation3d()).relativeTo(camPose).getTranslation())
+            .collect(Collectors.toList());
         
         // translate to opencv classes
-        var objectPoints = translationToTvec(relativeTrls);
+        var objectPoints = translationToTvec(relativeTrls.toArray(new Translation3d[0]));
         var rvec = Mat.zeros(3, 1, CvType.CV_32F);
         var tvec = Mat.zeros(3, 1, CvType.CV_32F);
         var cameraMatrix = matrixToMat(camProp.getIntrinsics().getStorage());
@@ -209,7 +209,7 @@ public final class OpenCVHelp {
         distCoeffs.release();
         imagePoints.release();
 
-        return corners;
+        return Arrays.asList(corners);
     }
 
     /**
@@ -222,8 +222,8 @@ public final class OpenCVHelp {
      * @param corners The distorted image points
      * @return The undistorted image points
      */
-    public static TargetCorner[] undistortCorners(SimCamProperties camProp, TargetCorner... corners) {
-        var points_in = targetCornersToMat(corners);
+    public static List<TargetCorner> undistortCorners(SimCamProperties camProp, List<TargetCorner> corners) {
+        var points_in = targetCornersToMat(corners.toArray(new TargetCorner[0]));
         var points_out = new MatOfPoint2f();
         var cameraMatrix = matrixToMat(camProp.getIntrinsics().getStorage());
         var distCoeffs = matrixToMat(camProp.getDistCoeffs().getStorage());
@@ -236,7 +236,7 @@ public final class OpenCVHelp {
         cameraMatrix.release();
         distCoeffs.release();
 
-        return corners_out;
+        return Arrays.asList(corners_out);
     }
 
     /**
@@ -246,8 +246,8 @@ public final class OpenCVHelp {
      * @param corners The corners defining this contour
      * @return Rectangle bounding the contour created by the given corners
      */
-    public static Rect getBoundingRect(TargetCorner... corners) {
-        var corn = targetCornersToMat(corners);
+    public static Rect getBoundingRect(List<TargetCorner> corners) {
+        var corn = targetCornersToMat(corners.toArray(new TargetCorner[0]));
         var rect = Imgproc.boundingRect(corn);
         corn.release();
         return rect;
@@ -259,8 +259,8 @@ public final class OpenCVHelp {
      * @param corners The corners defining this contour
      * @return Area in pixels (units of corner x/y)
      */
-    public static double getContourAreaPx(TargetCorner... corners) {
-        var temp = targetCornersToMat(corners);
+    public static double getContourAreaPx(List<TargetCorner> corners) {
+        var temp = targetCornersToMat(corners.toArray(new TargetCorner[0]));
         var corn = new MatOfPoint(temp.toArray());
         temp.release();
         
@@ -294,14 +294,14 @@ public final class OpenCVHelp {
      * @param modelTrls The translations of the object corners. These should have the object
      *     pose as their origin.
      * @param imageCorners The projection of these 3d object points into the 2d camera image
-     * @return The resulting transformation(s) that map the camera pose to the target pose
+     * @return The resulting <b>transformation(s)</b> that map the camera pose to the target pose
      *     and the ambiguity if alternate solutions are also available.
      */
-    public static PNPResults solvePNP(
-            SimCamProperties camProp, Translation3d[] modelTrls, TargetCorner[] imageCorners) {
+    public static PNPResults solveTagPNP(
+            SimCamProperties camProp, List<Translation3d> modelTrls, List<TargetCorner> imageCorners) {
         // translate to opencv classes
-        var objectPoints = translationToTvec(modelTrls);
-        var imagePoints = targetCornersToMat(imageCorners);
+        var objectPoints = translationToTvec(modelTrls.toArray(new Translation3d[0]));
+        var imagePoints = targetCornersToMat(imageCorners.toArray(new TargetCorner[0]));
         var cameraMatrix = matrixToMat(camProp.getIntrinsics().getStorage());
         var distCoeffs = matrixToMat(camProp.getDistCoeffs().getStorage());
         var rvecs = new ArrayList<Mat>();
@@ -370,6 +370,55 @@ public final class OpenCVHelp {
         reprojectionError.release();
         return results;
     }
+    /**
+     * Finds the transformation that maps the camera's pose to the field origin.
+     * The camera's pose relative to the targets is determined by the supplied 3d points of
+     * the target's corners on the field and their associated 2d points imaged by the camera.
+     * 
+     * <p>For planar targets, there may be an alternate solution which is plausible given
+     * the 2d image points. This has an associated "ambiguity" which describes the
+     * ratio of reprojection error between the "best" and "alternate" solution.
+     * 
+     * @param camProp The properties of this camera
+     * @param objectTrls The translations of the object corners, relative to the field.
+     * @param imageCorners The projection of these 3d object points into the 2d camera image.
+     *     The order should match the given object point translations.
+     * @return The resulting transformation(s) that map the camera pose to the target pose
+     *     and the ambiguity if alternate solutions are also available.
+     */
+    public static PNPResults solveTagsPNP(
+            SimCamProperties camProp, List<Translation3d> objectTrls, List<TargetCorner> imageCorners) {
+        // translate to opencv classes
+        var objectPoints = translationToTvec(objectTrls.toArray(new Translation3d[0]));
+        var imagePoints = targetCornersToMat(imageCorners.toArray(new TargetCorner[0]));
+        var cameraMatrix = matrixToMat(camProp.getIntrinsics().getStorage());
+        var distCoeffs = matrixToMat(camProp.getDistCoeffs().getStorage());
+        var rvec = Mat.zeros(3, 1, CvType.CV_32F);
+        var tvec = Mat.zeros(3, 1, CvType.CV_32F);
+        // calc rvec/tvec from image points
+        Calib3d.solvePnP(
+            objectPoints, imagePoints,
+            cameraMatrix, distCoeffs,
+            rvec, tvec,
+            false, Calib3d.SOLVEPNP_ITERATIVE
+        );
+
+        // convert to wpilib coordinates
+        var best = new Transform3d(
+            tvecToTranslation(tvec),
+            rvecToRotation(rvec)
+        );
+        best = convertOpenCVtoPhotonPose(best);
+        
+        // release our Mats from native memory
+        objectPoints.release();
+        imagePoints.release();
+        cameraMatrix.release();
+        distCoeffs.release();
+        rvec.release();
+        tvec.release();
+        return new PNPResults(best, new Transform3d(), 0);
+    }
 
     private static final Rotation3d wpilib = new Rotation3d(
         new MatBuilder<>(Nat.N3(), Nat.N3()).fill(
@@ -384,26 +433,5 @@ public final class OpenCVHelp {
             camToTarg.getTranslation(),
             wpilib.rotateBy(camToTarg.getRotation())
         );
-    }
-
-    /**
-     * Pair of camera-to-target transformations and the associated ambiguity from
-     * the ratio of their reprojection errors, calculated by
-     * {@link OpenCVHelp#solvePNP(SimCamProperties, Translation3d[], TargetCorner[])}
-     */
-    public static class PNPResults {
-        public final Transform3d best;
-        /**
-         * Alternate, ambiguous solution from solvepnp. This may be an empty transform
-         * if no alternate solution is found.
-         */
-        public final Transform3d alt;
-        /** If no alternate solution is found, this is 0 */
-        public final double ambiguity;
-        public PNPResults(Transform3d best, Transform3d alt, double ambiguity) {
-            this.best = best;
-            this.alt = alt;
-            this.ambiguity = ambiguity;
-        }
     }
 }

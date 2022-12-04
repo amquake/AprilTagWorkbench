@@ -99,7 +99,6 @@
           "weight": 1.0,
           "width": 0.800000011920929
         },
-        "bottom": 900,
         "cam-front": {
           "arrowColor": [
             0.0,
@@ -136,10 +135,26 @@
         },
         "height": 8.229599952697754,
         "image": "2022-field.png",
-        "left": 74,
-        "right": 1774,
-        "top": 50,
-        "units": "inches",
+        "testPoses": {
+          "arrowColor": [
+            225.94937133789063,
+            255.0,
+            0.0,
+            255.0
+          ],
+          "arrowWeight": 2.0,
+          "color": [
+            251.77215576171875,
+            255.0,
+            0.0,
+            255.0
+          ],
+          "length": 0.800000011920929,
+          "selectable": false,
+          "weight": 2.0,
+          "width": 0.800000011920929
+        },
+        "units": "feet",
         "visibleTargets": {
           "arrows": false,
           "image": "tag-blue.png",

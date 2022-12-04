@@ -55,7 +55,6 @@ import org.photonvision.common.dataflow.structures.Packet;
 import org.photonvision.targeting.PhotonPipelineResult;
 import org.photonvision.targeting.PhotonTrackedTarget;
 import org.photonvision.targeting.TargetCorner;
-import frc.robot.vision.SimVisionTarget.CameraTargetRelation;
 
 @SuppressWarnings("unused")
 public class PhotonCameraSim {
@@ -204,10 +203,10 @@ public class PhotonCameraSim {
      * @param corners The corners of the target as image points(x,y)
      * @return If the target area is large enough and the corners are inside
      *     the camera's FOV
-     * @see OpenCVHelp#projectPoints(Pose3d, SimCamProperties, Translation3d...)
-     * @see OpenCVHelp#getContourAreaPx(TargetCorner...)
+     * @see OpenCVHelp#projectPoints(Pose3d, SimCamProperties, List)
+     * @see OpenCVHelp#getContourAreaPx(List)
      */
-    public boolean canSeeCorners(double areaPixels, TargetCorner... corners) {
+    public boolean canSeeCorners(double areaPixels, List<TargetCorner> corners) {
         // corner is outside of resolution
         for(var corner : corners) {
             if(MathUtil.clamp(corner.x, 0, prop.getResWidth()) != corner.x ||
@@ -289,8 +288,10 @@ public class PhotonCameraSim {
             if(!canSeeTargetPose(cameraPose, tgt)) continue;
 
             // find target's 3d corner points
-            var fieldCorners = tgt.getFieldCorners();
-            if(!tgt.getModel().isPlanar) fieldCorners = tgt.getAgnosticFieldCorners(cameraPose);
+            var fieldCorners = tgt.getModel().getFieldCorners(tgt.getPose());
+            if(!tgt.getModel().isPlanar) {
+                fieldCorners = tgt.getModel().getAgnosticFieldCorners(cameraPose, tgt.getPose());
+            }
             // project 3d target points into 2d image points
             var targetCorners = OpenCVHelp.projectPoints(
                 cameraPose,
@@ -309,9 +310,9 @@ public class PhotonCameraSim {
             if(!canSeeCorners(areaPixels, targetCorners)) continue;
 
             // only do 3d estimation if we have a planar target
-            var pnpSim = new OpenCVHelp.PNPResults(new Transform3d(), new Transform3d(), 0);
+            var pnpSim = new VisionEstimation.PNPResults(new Transform3d(), new Transform3d(), 0);
             if(tgt.getModel().isPlanar) {
-                pnpSim = OpenCVHelp.solvePNP(prop, tgt.getModel().cornerOffsets, targetCorners);
+                pnpSim = OpenCVHelp.solveTagPNP(prop, tgt.getModel().cornerOffsets, targetCorners);
             }
 
             visibleTgts.add(
@@ -324,28 +325,28 @@ public class PhotonCameraSim {
                     pnpSim.best,
                     pnpSim.alt,
                     pnpSim.ambiguity,
-                    List.of(targetCorners)
+                    targetCorners
                 )
             );
 
-            dbgVisCorners.addAll(List.of(targetCorners));
-            if(dbgBestCorners.size()==0) dbgBestCorners.addAll(List.of(targetCorners));
+            dbgVisCorners.addAll(targetCorners);
+            if(dbgBestCorners.size()==0) dbgBestCorners.addAll(targetCorners);
         }
 
         dbgCorners.getObject("corners").setPoses(
-            List.of(prop.getPixelFraction(dbgVisCorners.toArray(new TargetCorner[0])))
+            prop.getPixelFraction(dbgVisCorners)
                 .stream()
                 .map(p -> new Pose2d(p.x, 1-p.y, new Rotation2d()))
                 .collect(Collectors.toList())
         );
         dbgCorners.getObject("bestCorners").setPoses(
-            List.of(prop.getPixelFraction(dbgBestCorners.toArray(new TargetCorner[0])))
+            prop.getPixelFraction(dbgBestCorners)
                 .stream()
                 .map(p -> new Pose2d(p.x, 1-p.y, new Rotation2d()))
                 .collect(Collectors.toList())
         );
         dbgCorners.getObject("aspectRatio").setPoses(
-            List.of(prop.getPixelFraction(
+            prop.getPixelFraction(List.of(
                 new TargetCorner(0, 0),
                 new TargetCorner(prop.getResWidth(), 0),
                 new TargetCorner(prop.getResWidth(), prop.getResHeight()),
