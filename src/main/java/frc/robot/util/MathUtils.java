@@ -1,11 +1,22 @@
 package frc.robot.util;
 
 import java.util.Arrays;
+import java.util.List;
+
+import org.ejml.data.DMatrixRMaj;
+import org.ejml.dense.row.factory.DecompositionFactory_DDRM;
+import org.ejml.simple.SimpleMatrix;
 
 import edu.wpi.first.math.MathUtil;
+import edu.wpi.first.math.Matrix;
+import edu.wpi.first.math.Nat;
+import edu.wpi.first.math.Num;
+import edu.wpi.first.math.Vector;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Rotation3d;
+import edu.wpi.first.math.geometry.Translation3d;
+import edu.wpi.first.math.numbers.N3;
 
 public class MathUtils {
     public static Pose3d calcAvg(Pose3d... values){
@@ -96,6 +107,74 @@ public class MathUtils {
         }
         variance /= values.length;
         return Math.sqrt(variance);
+    }
+
+    /** Converts this list of translations to a 3xN matrix. */
+    public static Matrix<N3, Num> translationsToMatrix(List<Translation3d> trls) {
+        var C = new Nat<Num>() {
+            @Override
+            public int getNum() {
+                return trls.size();
+            }
+        };
+        var matrix = new Matrix<N3, Num>(Nat.N3(), C);
+        for(int i = 0; i < trls.size(); i++) {
+            var trl = trls.get(i);
+            var col = Matrix.mat(Nat.N3(), Nat.N1()).fill(trl.getX(), trl.getY(), trl.getZ());
+            matrix.setColumn(i, col);
+        }
+        return matrix;
+    }
+    /** Subtracts this translation from every column of this 3xN matrix. */
+    public static void columnsMinusTrl(Matrix<N3, Num> matrix, Translation3d trl) {
+        var col = Matrix.mat(Nat.N3(), Nat.N1()).fill(trl.getX(), trl.getY(), trl.getZ());
+        for(int i = 0; i < matrix.getNumCols(); i++) {
+            matrix.setColumn(i, matrix.extractColumnVector(i).minus(col));
+        }
+    }
+    /** Checks if the columns of this matrix, as points, are collinear */
+    public static <R extends Num, C extends Num> boolean isCollinear(Matrix<R, C> matrix) {
+        if(matrix == null) return false;
+        if(matrix.getNumRows() < 2 || matrix.getNumCols() < 3) return true;
+        var vecA = new Vector<>(matrix.extractColumnVector(0));
+        var vecAB = new Vector<>(matrix.extractColumnVector(1).minus(vecA));
+        for(int i = 2; i < matrix.getNumCols(); i++) {
+            var vecAC = new Vector<>(matrix.extractColumnVector(i).minus(vecA));
+            double val = Math.abs(vecAB.dot(vecAC) / (vecAB.norm() * vecAC.norm()));
+            System.out.println("--collinear value: "+val);
+            if(Math.abs(val - 1) > 1e-4) return false;
+        }
+        return true;
+    }
+    /**
+     * Orthogonalize an input matrix using a QR decomposition. QR decompositions decompose a
+     * rectangular matrix 'A' such that 'A=QR', where Q is the closest orthogonal matrix to the input,
+     * and R is an upper triangular matrix.
+     */
+    public static Matrix<N3, N3> orthogonalizeRotationMatrix(Matrix<N3, N3> input) {
+        var a = DecompositionFactory_DDRM.qr(3, 3);
+        if (!a.decompose(input.getStorage().getDDRM())) {
+            // best we can do is return the input
+            return input;
+        }
+
+        // Grab results (thanks for this _great_ api, EJML)
+        var Q = new DMatrixRMaj(3, 3);
+        var R = new DMatrixRMaj(3, 3);
+        a.getQ(Q, false);
+        a.getR(R, false);
+
+        // Fix signs in R if they're < 0 so it's close to an identity matrix
+        // (our QR decomposition implementation sometimes flips the signs of columns)
+        for (int colR = 0; colR < 3; ++colR) {
+            if (R.get(colR, colR) < 0) {
+                for (int rowQ = 0; rowQ < 3; ++rowQ) {
+                    Q.set(rowQ, colR, -Q.get(rowQ, colR));
+                }
+            }
+        }
+
+        return new Matrix<>(new SimpleMatrix(Q));
     }
 
     public static boolean within(int value, int from, int to){

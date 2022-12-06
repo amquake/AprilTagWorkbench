@@ -7,6 +7,7 @@ import static edu.wpi.first.wpilibj2.command.Commands.*;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import org.photonvision.targeting.PhotonPipelineResult;
 import org.photonvision.targeting.TargetCorner;
@@ -26,9 +27,9 @@ import edu.wpi.first.wpilibj2.command.RunCommand;
 import frc.robot.auto.AutoOptions;
 import frc.robot.common.OCXboxController;
 import frc.robot.subsystems.drivetrain.SwerveDrive;
+import frc.robot.util.RotTrlTransform3d;
 import frc.robot.vision.AprilTag;
 import frc.robot.vision.AprilTagFieldLayout;
-import frc.robot.vision.CameraTargetRelation;
 import frc.robot.vision.SimCamProperties;
 import frc.robot.vision.PhotonCamera;
 import frc.robot.vision.PhotonCameraSim;
@@ -81,7 +82,7 @@ public class RobotContainer {
                         0
                     )
                 )
-            )/*,
+            ),
             new PhotonCameraSim(
                 camera2,
                 SimCamProperties.PI4_PICAM2_480p,
@@ -93,12 +94,12 @@ public class RobotContainer {
                     ),
                     new Rotation3d(
                         0,
-                        Math.toRadians(10),
+                        -Math.toRadians(18),
                         Math.PI
                     )
                 )
             )
-            */
+            
         );
 
         try {
@@ -191,10 +192,11 @@ public class RobotContainer {
     //----- Simulation
     public void simulationPeriodic() {
         visionSim.update(drivetrain.getPerfPose());
-        field.getObject("Noisy Robot").setPose(drivetrain.getPose());
+        field.getObject("Noisy Robot").setPose(drivetrain.getPerfPose());
 
         var visCorners = new ArrayList<TargetCorner>();
-        var visTags = new ArrayList<AprilTag>();
+        var knownVisTags = new ArrayList<AprilTag>();
+        var relVisTags = new ArrayList<AprilTag>();
 
         var bestPoses = new ArrayList<Pose2d>();
         var altPoses = new ArrayList<Pose2d>();
@@ -215,8 +217,14 @@ public class RobotContainer {
             for(var target : result.getTargets()) {
                 visCorners.addAll(target.getCorners());
                 Pose3d tagPose = tagLayout.getTagPose(target.getFiducialId()).get();
-                visTags.add(new AprilTag(target.getFiducialId(), tagPose));
+                // actual layout poses of visible tags
+                knownVisTags.add(new AprilTag(target.getFiducialId(), tagPose));
                 Transform3d camToBest = target.getBestCameraToTarget();
+                // tags estimated relative to robot
+                relVisTags.add(new AprilTag(
+                    target.getFiducialId(),
+                    new Pose3d().plus(cameraSim.getRobotToCamera()).plus(camToBest)
+                ));
                 Transform3d camToAlt = target.getAlternateCameraToTarget();
 
                 var bestPose = tagPose
@@ -235,19 +243,29 @@ public class RobotContainer {
                 );
             }
 
-            if(result.getTargets().size() > 1) {
-                var estTrf = VisionEstimation.estimateTagsPNP(
-                    cameraSim.prop,
-                    visCorners,
-                    visTags
-                );
-                testPoses.add(
-                    new Pose3d()
-                        .plus(estTrf.best) // field-to-camera
-                        .plus(cameraSim.getRobotToCamera().inverse()) // field-to-robot
-                        .toPose2d()
-                );
-            }
+            // multi-target solvePNP
+            // if(result.getTargets().size() > 1) {
+            //     var estTrf = VisionEstimation.estimateTagsPNP(
+            //         cameraSim.prop,
+            //         visCorners,
+            //         visTags
+            //     );
+            //     testPoses.add(
+            //         new Pose3d()
+            //             .plus(estTrf.best) // field-to-camera
+            //             .plus(cameraSim.getRobotToCamera().inverse()) // field-to-robot
+            //             .toPose2d()
+            //     );
+            // }
+        }
+        if(knownVisTags.size() > 0) {
+            var estTrf = VisionEstimation.estimateRigidTransform(
+                relVisTags,
+                knownVisTags,
+                true
+            );
+            var estRobotPose = estTrf.trf.apply(new Pose3d());
+            testPoses.add(estRobotPose.toPose2d());
         }
         if(updated) {
             field.getObject("bestPoses").setPoses(bestPoses);

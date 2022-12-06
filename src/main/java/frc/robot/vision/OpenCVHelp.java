@@ -400,7 +400,7 @@ public final class OpenCVHelp {
             objectPoints, imagePoints,
             cameraMatrix, distCoeffs,
             rvec, tvec,
-            false, Calib3d.SOLVEPNP_ITERATIVE
+            false, Calib3d.SOLVEPNP_SQPNP
         );
 
         // convert to wpilib coordinates

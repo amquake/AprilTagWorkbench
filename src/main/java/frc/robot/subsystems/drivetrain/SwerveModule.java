@@ -178,8 +178,8 @@ public class SwerveModule {
     private Random rand = new Random();
     private double perfDriveDistance = 0;
     private double perfDriveVelocity = 0;
-    private final double kDriveVelocityNoiseRatio = 0;//0.04; // scaled with velocity
-    private final double kDriveAccelNoiseRatio = 0;//0.06; // scaled with accel, added to velocity noise
+    private final double kDriveVelocityNoiseRatio = 0.02; // scaled with velocity
+    private final double kDriveAccelNoiseRatio = 0.03; // scaled with accel, added to velocity noise
     private final FlywheelSim steeringSim = new FlywheelSim(
         LinearSystemId.identifyVelocitySystem(kSteerFF.kv, kSteerFF.ka),
         DCMotor.getFalcon500(1),
