@@ -160,6 +160,3 @@ bin/
 
 # Simulation GUI and other tools window save file
 *-window.json
-.vscode/launch.json
-.vscode/settings.json
-.wpilib/wpilib_preferences.json
