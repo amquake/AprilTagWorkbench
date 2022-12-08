@@ -41,6 +41,7 @@ import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.util.CameraTargetRelation;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -310,7 +311,7 @@ public class PhotonCameraSim {
             if(!canSeeCorners(areaPixels, targetCorners)) continue;
 
             // only do 3d estimation if we have a planar target
-            var pnpSim = new VisionEstimation.PNPResults(new Transform3d(), new Transform3d(), 0);
+            var pnpSim = new VisionEstimation.PNPResults();
             if(tgt.getModel().isPlanar) {
                 pnpSim = OpenCVHelp.solveTagPNP(prop, tgt.getModel().cornerOffsets, targetCorners);
             }

@@ -141,8 +141,7 @@ public class MathUtils {
         for(int i = 2; i < matrix.getNumCols(); i++) {
             var vecAC = new Vector<>(matrix.extractColumnVector(i).minus(vecA));
             double val = Math.abs(vecAB.dot(vecAC) / (vecAB.norm() * vecAC.norm()));
-            System.out.println("--collinear value: "+val);
-            if(Math.abs(val - 1) > 1e-4) return false;
+            if(Math.abs(val - 1) > 5e-5) return false;
         }
         return true;
     }

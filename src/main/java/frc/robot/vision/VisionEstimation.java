@@ -13,6 +13,7 @@ import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.util.Units;
+import edu.wpi.first.wpilibj.Tracer;
 import frc.robot.util.MathUtils;
 import frc.robot.util.RotTrlTransform3d;
 
@@ -24,41 +25,44 @@ public class VisionEstimation {
     );
 
     /**
-     * Performs solvePNP using 3d-2d point correspondencies to estimate the field-to-camera transformation.
+     * Performs solvePNP using 3d-2d point correspondences to estimate the field-to-camera transformation.
      * If only one tag is visible, the result may have an alternate solution.
      * 
      * <p><b>Note:</b> The returned transformation is from the field origin to the camera pose!
      * 
      * @param prop The camera properties
      * @param corners The visible tag corners in the 2d image
-     * @param visibleTags The visible tags in 3d field space
+     * @param knownTags The known tag field poses corresponding to the visible tag IDs
      * @return The transformation that maps the field origin to the camera pose
      */
     public static PNPResults estimateTagsPNP(
-            SimCamProperties prop, List<TargetCorner> corners, List<AprilTag> visibleTags) {
-        if(visibleTags == null || corners == null ||
-                corners.size() != visibleTags.size()*4 || visibleTags.size() == 0) {
-            return new PNPResults(new Transform3d(), new Transform3d(), 0);
+            SimCamProperties prop, List<TargetCorner> corners, List<AprilTag> knownTags) {
+        if(knownTags == null || corners == null ||
+                corners.size() != knownTags.size()*4 || knownTags.size() == 0) {
+            return new PNPResults();
         }
         // single-tag pnp
         if(corners.size() == 4) {
             var camToTag = OpenCVHelp.solveTagPNP(prop, tagModel.cornerOffsets, corners);
-            var bestPose = visibleTags.get(0).pose.transformBy(camToTag.best.inverse());
+            var bestPose = knownTags.get(0).pose.transformBy(camToTag.best.inverse());
             var altPose = new Pose3d();
-            if(camToTag.ambiguity != 0) altPose = visibleTags.get(0).pose.transformBy(camToTag.alt.inverse());
+            if(camToTag.ambiguity != 0) altPose = knownTags.get(0).pose.transformBy(camToTag.alt.inverse());
             var o = new Pose3d();
             return new PNPResults(
                 new Transform3d(o, bestPose),
                 new Transform3d(o, altPose),
-                camToTag.ambiguity
+                camToTag.ambiguity, camToTag.bestReprojErr, camToTag.altReprojErr
             );
         }
         // multi-tag pnp
         else {
             var objectTrls = new ArrayList<Translation3d>();
-            for(var tag : visibleTags) objectTrls.addAll(tagModel.getFieldCorners(tag.pose));
+            for(var tag : knownTags) objectTrls.addAll(tagModel.getFieldCorners(tag.pose));
             var camToOrigin = OpenCVHelp.solveTagsPNP(prop, objectTrls, corners);
-            return new PNPResults(camToOrigin.best.inverse(), new Transform3d(), 0);
+            return new PNPResults(
+                camToOrigin.best.inverse(),
+                camToOrigin.alt.inverse(),
+                camToOrigin.ambiguity, camToOrigin.bestReprojErr, camToOrigin.altReprojErr);
         }
     }
 
@@ -68,33 +72,43 @@ public class VisionEstimation {
      * 
      * <p>The lists must have the same size, and the tags at the same index of both lists
      * must correspond to the same fiducial ID. If useCorners is true, the 4 corners of
-     * the tag are used instead of the center point. Based on this, there must be more
-     * than 2 points, and the points must not all be collinear. The poses of both lists
-     * of AprilTags share an origin.
+     * the tag are used in addition to the center point. Based on this, there must be more
+     * than 2 points, and the points must not all be collinear.
      * 
      * <p>If a solution cannot be found, the returned transformation is empty and the RMSE is -1.
      * 
      * @param measuredTags The "measured" set of tags to map onto the "known" tags
      * @param knownTags The "known" set of tags to be mapped onto
-     * @param useCorners If the corners of the tags should be used instead of the center point.
-     *     This multiplies the total points by 4, but may be less accurate.
+     * @param useCorners If the corners of the tags should be used in addition to the center point.
+     *     This multiplies the total points by 5, but may be less accurate.
      * @return The estimated transform(rotation-translation) and associated RMSE. If the
      *     RMSE of this is -1, no solution could be found.
      * @see #estimateRigidTransform(List, List)
      */
-    public static SVDResults estimateRigidTransform(
+    public static SVDResults estimateTagsLS(
             List<AprilTag> measuredTags, List<AprilTag> knownTags, boolean useCorners) {
-        //
+        if(measuredTags == null || knownTags == null ||
+                measuredTags.size() < 1 || measuredTags.size() != knownTags.size()) {
+            return new SVDResults();
+        }
         var measuredTrls = new ArrayList<Translation3d>();
-        for(var tag : measuredTags) {
-            if(useCorners) measuredTrls.addAll(tagModel.getFieldCorners(tag.pose));
-            else measuredTrls.add(tag.pose.getTranslation());
-        }
         var knownTrls = new ArrayList<Translation3d>();
-        for(var tag : knownTags) {
-            if(useCorners) knownTrls.addAll(tagModel.getFieldCorners(tag.pose));
-            else knownTrls.add(tag.pose.getTranslation());
+        for(int i = 0; i < measuredTags.size(); i++) {
+            var mTag = measuredTags.get(i);
+            var kTag = knownTags.get(i);
+            if(useCorners) {
+                measuredTrls.addAll(tagModel.getFieldCorners(mTag.pose));
+                knownTrls.addAll(tagModel.getFieldCorners(kTag.pose));
+            }
+            var mTrl = mTag.pose.getTranslation();
+            var up = new Translation3d(0, 0, 0.5);
+            measuredTrls.add(mTrl);
+            measuredTrls.add(mTrl.plus(up));
+            var kTrl = kTag.pose.getTranslation();
+            knownTrls.add(kTrl);
+            knownTrls.add(kTrl.plus(up));
         }
+        
         return estimateRigidTransform(measuredTrls, knownTrls);
     }
     /**
@@ -122,13 +136,13 @@ public class VisionEstimation {
         }
         // convert lists to matrices
         var matA = MathUtils.translationsToMatrix(trlsA);
-        System.out.println("matA: "+matA);
+        // System.out.println("matA: "+matA);
         var matB = MathUtils.translationsToMatrix(trlsB);
-        System.out.println("matB: "+matB);
+        // System.out.println("matB: "+matB);
 
         // check if points are collinear
-        System.out.println("matA collinear: "+MathUtils.isCollinear(matA));
-        System.out.println("matB collinear: "+MathUtils.isCollinear(matB));
+        // System.out.println("matA collinear: "+MathUtils.isCollinear(matA));
+        // System.out.println("matB collinear: "+MathUtils.isCollinear(matB));
         if(MathUtils.isCollinear(matA) || MathUtils.isCollinear(matB)) return new SVDResults();
 
         // find the centers of our lists of translations
@@ -160,8 +174,8 @@ public class VisionEstimation {
         // check for "reflection" case
         if(matR.det() < 0) {
             // mult 3rd column of V by -1
-            var newVCol = matH.getStorage().svd().getV().extractVector(false, 2).scale(-1);
-            matH.getStorage().svd().getV().setColumn(2, 0, newVCol.getDDRM().getData());
+            var newVCol = svd.getV().extractVector(false, 2).scale(-1);
+            svd.getV().setColumn(2, 0, newVCol.getDDRM().getData());
             matR = new Matrix<N3, N3>(svd.getV().mult(svd.getU().transpose()));
         }
         // matR = MathUtils.orthogonalizeRotationMatrix(matR);
@@ -170,7 +184,7 @@ public class VisionEstimation {
         var matTrl = centroidMatB.minus(matR.times(centroidMatA));
         double[] trlData = matTrl.getData();
         
-        System.out.println("matR det: "+matR.det());
+        //System.out.println("matR det: "+matR.det());
         var rot = new frc.robot.util.Rotation3d(matR);
         // Our estimated transform must first apply rotation, and then translation
         var trf = new RotTrlTransform3d(
@@ -202,10 +216,20 @@ public class VisionEstimation {
         public final Transform3d alt;
         /** If no alternate solution is found, this is 0 */
         public final double ambiguity;
-        public PNPResults(Transform3d best, Transform3d alt, double ambiguity) {
+        public final double bestReprojErr;
+        public final double altReprojErr;
+
+        public PNPResults() {
+            this(new Transform3d(), new Transform3d(), 0, 0, 0);
+        }
+        public PNPResults(
+                Transform3d best, Transform3d alt,
+                double ambiguity, double bestReprojErr, double altReprojErr) {
             this.best = best;
             this.alt = alt;
             this.ambiguity = ambiguity;
+            this.bestReprojErr = bestReprojErr;
+            this.altReprojErr = altReprojErr;
         }
     }
     /**

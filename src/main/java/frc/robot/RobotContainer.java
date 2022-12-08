@@ -82,23 +82,24 @@ public class RobotContainer {
                         0
                     )
                 )
-            ),
-            new PhotonCameraSim(
-                camera2,
-                SimCamProperties.PI4_PICAM2_480p,
-                new Transform3d( // robot to camera
-                    new Translation3d(
-                        Units.inchesToMeters(-10),
-                        0,
-                        Units.inchesToMeters(25)
-                    ),
-                    new Rotation3d(
-                        0,
-                        -Math.toRadians(18),
-                        Math.PI
-                    )
-                )
             )
+            //,
+            // new PhotonCameraSim(
+            //     camera2,
+            //     SimCamProperties.PI4_PICAM2_480p,
+            //     new Transform3d( // robot to camera
+            //         new Translation3d(
+            //             Units.inchesToMeters(-10),
+            //             0,
+            //             Units.inchesToMeters(25)
+            //         ),
+            //         new Rotation3d(
+            //             0,
+            //             -Math.toRadians(18),
+            //             Math.PI
+            //         )
+            //     )
+            // )
             
         );
 
@@ -150,18 +151,16 @@ public class RobotContainer {
         .whileTrue(run(()->{
             var cameraSim = visionSim.getCameraSim(camera1.name);
             cameraSim.adjustCamera(
-                cameraSim.getRobotToCamera().plus(
-                    new Transform3d(new Translation3d(), new Rotation3d(0, -0.01, 0))
-                )
+                new Transform3d(new Translation3d(), new Rotation3d(0, -0.01, 0))
+                        .plus(cameraSim.getRobotToCamera())
             );
         }));
         controller.aButton
             .whileTrue(run(()->{
                 var cameraSim = visionSim.getCameraSim(camera1.name);
                 cameraSim.adjustCamera(
-                    cameraSim.getRobotToCamera().plus(
-                        new Transform3d(new Translation3d(), new Rotation3d(0, 0.01, 0))
-                    )
+                    new Transform3d(new Translation3d(), new Rotation3d(0, 0.01, 0))
+                        .plus(cameraSim.getRobotToCamera())
                 );
             }));
         
@@ -197,6 +196,7 @@ public class RobotContainer {
         var visCorners = new ArrayList<TargetCorner>();
         var knownVisTags = new ArrayList<AprilTag>();
         var relVisTags = new ArrayList<AprilTag>();
+        var relVisCornerTrls = new ArrayList<Translation3d>();
 
         var bestPoses = new ArrayList<Pose2d>();
         var altPoses = new ArrayList<Pose2d>();
@@ -244,22 +244,27 @@ public class RobotContainer {
             }
 
             // multi-target solvePNP
-            // if(result.getTargets().size() > 1) {
-            //     var estTrf = VisionEstimation.estimateTagsPNP(
-            //         cameraSim.prop,
-            //         visCorners,
-            //         visTags
-            //     );
-            //     testPoses.add(
-            //         new Pose3d()
-            //             .plus(estTrf.best) // field-to-camera
-            //             .plus(cameraSim.getRobotToCamera().inverse()) // field-to-robot
-            //             .toPose2d()
-            //     );
-            // }
+            if(result.getTargets().size() > 1) {
+                var pnpResults = VisionEstimation.estimateTagsPNP(
+                    cameraSim.prop,
+                    visCorners,
+                    knownVisTags
+                );
+                var best = new Pose3d()
+                    .plus(pnpResults.best) // field-to-camera
+                    .plus(cameraSim.getRobotToCamera().inverse()); // field-to-robot
+                var alt = new Pose3d()
+                    .plus(pnpResults.alt) // field-to-camera
+                    .plus(cameraSim.getRobotToCamera().inverse()); // field-to-robot
+                bestPoses.clear();
+                altPoses.clear();
+                bestPoses.add(best.toPose2d());
+                altPoses.add(alt.toPose2d());
+                // testPoses.add(best.toPose2d());
+            }
         }
         if(knownVisTags.size() > 0) {
-            var estTrf = VisionEstimation.estimateRigidTransform(
+            var estTrf = VisionEstimation.estimateTagsLS(
                 relVisTags,
                 knownVisTags,
                 true

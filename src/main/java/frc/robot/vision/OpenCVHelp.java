@@ -321,7 +321,6 @@ public final class OpenCVHelp {
 
         float[] errors = new float[2];
         reprojectionError.get(0, 0, errors);
-        double ambiguity = 0;
         // convert to wpilib coordinates
         var best = new Transform3d(
             tvecToTranslation(tvecs.get(0)),
@@ -335,20 +334,19 @@ public final class OpenCVHelp {
                 rvecToRotation(rvecs.get(1))
             );
 
-            ambiguity = errors[0] / errors[1];
             if(errors[0] > errors[1]) {
-                var temp = best;
+                var tempErr = errors[1];
+                errors[1] = errors[0];
+                errors[0] = tempErr;
+                var tempTrf = best;
                 best = alt;
-                alt = temp;
-                ambiguity = errors[1] / errors[0];
+                alt = tempTrf;
             }
         }
 
         best = convertOpenCVtoPhotonPose(best);
         alt = convertOpenCVtoPhotonPose(alt);
-        
-        var results = new PNPResults(best, alt, ambiguity);
- 
+         
         // System.err.println("--------------------------");
         // System.err.println("object: "+objectPoints.dump());
         // System.err.println("image: "+imagePoints.dump());
@@ -368,7 +366,7 @@ public final class OpenCVHelp {
         rvec.release();
         tvec.release();
         reprojectionError.release();
-        return results;
+        return new PNPResults(best, alt, errors[0] / errors[1], errors[0], errors[1]);
     }
     /**
      * Finds the transformation that maps the camera's pose to the field origin.
@@ -393,21 +391,29 @@ public final class OpenCVHelp {
         var imagePoints = targetCornersToMat(imageCorners.toArray(new TargetCorner[0]));
         var cameraMatrix = matrixToMat(camProp.getIntrinsics().getStorage());
         var distCoeffs = matrixToMat(camProp.getDistCoeffs().getStorage());
+        var rvecs = new ArrayList<Mat>();
+        var tvecs = new ArrayList<Mat>();
         var rvec = Mat.zeros(3, 1, CvType.CV_32F);
         var tvec = Mat.zeros(3, 1, CvType.CV_32F);
+        var reprojectionError = new Mat();
         // calc rvec/tvec from image points
-        Calib3d.solvePnP(
+        Calib3d.solvePnPGeneric(
             objectPoints, imagePoints,
             cameraMatrix, distCoeffs,
-            rvec, tvec,
-            false, Calib3d.SOLVEPNP_SQPNP
+            rvecs, tvecs,
+            false, Calib3d.SOLVEPNP_SQPNP,
+            rvec, tvec, reprojectionError
         );
 
+        float[] errors = new float[2];
+        reprojectionError.get(0, 0, errors);
         // convert to wpilib coordinates
         var best = new Transform3d(
-            tvecToTranslation(tvec),
-            rvecToRotation(rvec)
+            tvecToTranslation(tvecs.get(0)),
+            rvecToRotation(rvecs.get(0))
         );
+        var alt = new Transform3d();
+
         best = convertOpenCVtoPhotonPose(best);
         
         // release our Mats from native memory
@@ -415,9 +421,12 @@ public final class OpenCVHelp {
         imagePoints.release();
         cameraMatrix.release();
         distCoeffs.release();
+        for(var v : rvecs) v.release();
+        for(var v : tvecs) v.release();
         rvec.release();
         tvec.release();
-        return new PNPResults(best, new Transform3d(), 0);
+        reprojectionError.release();
+        return new PNPResults(best, alt, 0, errors[0], 0);
     }
 
     private static final Rotation3d wpilib = new Rotation3d(
