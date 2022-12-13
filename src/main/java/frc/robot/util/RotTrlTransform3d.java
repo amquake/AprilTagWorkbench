@@ -19,6 +19,20 @@ public class RotTrlTransform3d {
     public RotTrlTransform3d() {
         this(new Transform3d());
     }
+    /**
+     * The rotation-translation transformation that makes poses in the world relative to
+     * this pose.
+     * @param pose The new origin
+     */
+    public RotTrlTransform3d(Pose3d pose) {
+        // rotate by change in origin rotation
+        var inverseRot = pose.getRotation().unaryMinus();
+        this.rot = inverseRot;
+        // orientation is now aligned, translate to match origins
+        this.trl = pose.getTranslation()
+            .rotateBy(inverseRot)
+            .unaryMinus();
+    }
     public RotTrlTransform3d(Transform3d trf) {
         this(trf.getRotation(), trf.getTranslation());
     }

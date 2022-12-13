@@ -1,29 +1,11 @@
-/*
- * Copyright (C) Photon Vision.
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <https://www.gnu.org/licenses/>.
- */
 package frc.robot.vision;
 
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import org.ejml.simple.SimpleMatrix;
 import org.opencv.calib3d.Calib3d;
-import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfDouble;
@@ -38,8 +20,9 @@ import org.opencv.imgproc.Imgproc;
 import org.photonvision.targeting.TargetCorner;
 
 import edu.wpi.first.cscore.CameraServerCvJNI;
-import edu.wpi.first.math.MatBuilder;
+import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.Nat;
+import edu.wpi.first.math.Num;
 import edu.wpi.first.math.Vector;
 import edu.wpi.first.math.geometry.CoordinateSystem;
 import edu.wpi.first.math.geometry.Pose3d;
@@ -47,6 +30,7 @@ import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.numbers.*;
+import frc.robot.util.RotTrlTransform3d;
 import frc.robot.vision.VisionEstimation.PNPResults;
 
 public final class OpenCVHelp {
@@ -67,8 +51,12 @@ public final class OpenCVHelp {
         mat.release();
         return wrappedMat;
     }
-    public static SimpleMatrix matToMatrix(Mat mat) {
-        return new SimpleMatrix(mat.rows(), mat.cols(), true, mat.get(0, 0));
+    public static Matrix<Num, Num> matToMatrix(Mat mat) {
+        double[] data = new double[(int)mat.total()*mat.channels()];
+        var doubleMat = new Mat(mat.rows(), mat.cols(), CvType.CV_64F);
+        mat.convertTo(doubleMat, CvType.CV_64F);
+        doubleMat.get(0, 0, data);
+        return new Matrix<>(new SimpleMatrix(mat.rows(), mat.cols(), true, data));
     }
 
     /**
@@ -115,11 +103,7 @@ public final class OpenCVHelp {
      * @param rvecOutput The rvec Mat to be filled with data
      */
     public static MatOfPoint3f rotationToRvec(Rotation3d rotation) {
-        rotation = CoordinateSystem.convert(
-            rotation,
-            CoordinateSystem.NWU(),
-            CoordinateSystem.EDN()
-        );
+        rotation = rotationNWUtoEDN(rotation);
         return new MatOfPoint3f(new Point3(rotation.getQuaternion().toRotationVector().getData()));
     }
     /**
@@ -138,11 +122,7 @@ public final class OpenCVHelp {
         axis.set(0, 0, data[0]);
         axis.set(1, 0, data[1]);
         axis.set(2, 0, data[2]);
-        return CoordinateSystem.convert(
-            new Rotation3d(axis, Core.norm(rvecInput)),
-            CoordinateSystem.EDN(),
-            CoordinateSystem.NWU()
-        );
+        return rotationEDNtoNWU(new Rotation3d(axis.div(axis.norm()), axis.norm()));
     }
     
     public static MatOfPoint2f targetCornersToMat(TargetCorner... corners) {
@@ -163,6 +143,67 @@ public final class OpenCVHelp {
     }
 
     /**
+     * Reorders the list, optionally indexing backwards and wrapping around to the
+     * last element after the first, and shifting all indices in the direction of indexing.
+     * 
+     * <p>e.g.
+     * <p>({1,2,3}, false, 1) -> {2,3,1}
+     * <p>({1,2,3}, true, 0) -> {1,3,2}
+     * <p>({1,2,3}, true, 1) -> {3,2,1}
+     * @param <T>
+     * @param elements
+     * @param backwards
+     * @param shift
+     * @return
+     */
+    public static <T> List<T> reorderCircular(List<T> elements, boolean backwards, int shift) {
+        int size = elements.size();
+        int dir = backwards ? -1 : 1;
+        var reordered = new ArrayList<>(elements);
+        for(int i = 0; i < size; i++) {
+            int index = (i*dir + shift*dir) % size;
+            if(index < 0) index = size + index;
+            reordered.set(i, elements.get(index));
+        }
+        return reordered;
+    }
+
+    /**
+     * Convert a rotation from EDN to NWU. For example, if you have a rotation X,Y,Z {1, 0, 0}
+     * in EDN, this would be XYZ {0, -1, 0} in NWU.
+     */
+    private static Rotation3d rotationEDNtoNWU(Rotation3d rot) {
+        return CoordinateSystem.convert(
+            new Rotation3d(),
+            CoordinateSystem.NWU(),
+            CoordinateSystem.EDN()
+        ).plus(
+            CoordinateSystem.convert(
+                rot,
+                CoordinateSystem.EDN(),
+                CoordinateSystem.NWU()
+            )
+        );
+    }
+    /**
+     * Convert a rotation from EDN to NWU. For example, if you have a rotation X,Y,Z {1, 0, 0}
+     * in EDN, this would be XYZ {0, -1, 0} in NWU.
+     */
+    private static Rotation3d rotationNWUtoEDN(Rotation3d rot) {
+        return CoordinateSystem.convert(
+            new Rotation3d(),
+            CoordinateSystem.EDN(),
+            CoordinateSystem.NWU()
+        ).plus(
+            CoordinateSystem.convert(
+                rot,
+                CoordinateSystem.NWU(),
+                CoordinateSystem.EDN()
+            )
+        );
+    }
+
+    /**
      * Project object points from the 3d world into the 2d camera image.
      * The camera properties(intrinsics, distortion) determine the results of
      * this projection.
@@ -175,28 +216,16 @@ public final class OpenCVHelp {
     public static List<TargetCorner> projectPoints(
             Pose3d camPose, SimCamProperties camProp,
             List<Translation3d> objectTranslations) {
-        // set object points relative to camera so we dont have to fill rvec/tvec
-        var relativeTrls = objectTranslations.stream()
-            .map(t -> new Pose3d(t, new Rotation3d()).relativeTo(camPose).getTranslation())
-            .collect(Collectors.toList());
-        
         // translate to opencv classes
-        var objectPoints = translationToTvec(relativeTrls.toArray(new Translation3d[0]));
-        var rvec = Mat.zeros(3, 1, CvType.CV_32F);
-        var tvec = Mat.zeros(3, 1, CvType.CV_32F);
+        var objectPoints = translationToTvec(objectTranslations.toArray(new Translation3d[0]));
+        var basisChange = new RotTrlTransform3d(camPose);
+        var rvec = rotationToRvec(basisChange.getRotation());
+        var tvec = translationToTvec(basisChange.getTranslation());
         var cameraMatrix = matrixToMat(camProp.getIntrinsics().getStorage());
         var distCoeffs = matrixToMat(camProp.getDistCoeffs().getStorage());
         var imagePoints = new MatOfPoint2f();
         // project to 2d
         Calib3d.projectPoints(objectPoints, rvec, tvec, cameraMatrix, distCoeffs, imagePoints);
-        
-        // System.err.println("--------------------------");
-        // System.err.println("rvec: "+rvec.dump());
-        // System.err.println("tvec: "+tvec.dump());
-        // System.err.println("cam: "+cameraMatrix.dump());
-        // System.err.println("dist: "+distCoeffs.dump());
-        // System.err.println("object: "+objectPoints.dump());
-        // System.err.println("image: "+imagePoints.dump());
         
         // turn 2d point Mat into TargetCorners
         var corners = matToTargetCorners(imagePoints);
@@ -292,13 +321,23 @@ public final class OpenCVHelp {
      * 
      * @param camProp The properties of this camera
      * @param modelTrls The translations of the object corners. These should have the object
-     *     pose as their origin.
-     * @param imageCorners The projection of these 3d object points into the 2d camera image
+     *     pose as their origin. These must come in a specific order (in NWU):
+     *     <ul>
+     *     <li> Point 0: [0, -squareLength / 2,  squareLength / 2]
+     *     <li> Point 0: [0,  squareLength / 2,  squareLength / 2]
+     *     <li> Point 0: [0,  squareLength / 2, -squareLength / 2]
+     *     <li> Point 0: [0, -squareLength / 2, -squareLength / 2]
+     *     </ul>
+     * @param imageCorners The projection of these 3d object points into the 2d camera image.
+     *     The order should match the given object point translations.
      * @return The resulting <b>transformation(s)</b> that map the camera pose to the target pose
      *     and the ambiguity if alternate solutions are also available.
      */
     public static PNPResults solveTagPNP(
             SimCamProperties camProp, List<Translation3d> modelTrls, List<TargetCorner> imageCorners) {
+        // IPPE_SQUARE expects our corners in a specific order
+        modelTrls = reorderCircular(modelTrls, false, 2);
+        imageCorners = reorderCircular(imageCorners, false, 2);
         // translate to opencv classes
         var objectPoints = translationToTvec(modelTrls.toArray(new Translation3d[0]));
         var imagePoints = targetCornersToMat(imageCorners.toArray(new TargetCorner[0]));
@@ -326,35 +365,14 @@ public final class OpenCVHelp {
             tvecToTranslation(tvecs.get(0)),
             rvecToRotation(rvecs.get(0))
         );
-        var alt = new Transform3d();
 
+        var alt = new Transform3d();
         if(tvecs.size() > 1) {
             alt = new Transform3d(
                 tvecToTranslation(tvecs.get(1)),
                 rvecToRotation(rvecs.get(1))
             );
-
-            if(errors[0] > errors[1]) {
-                var tempErr = errors[1];
-                errors[1] = errors[0];
-                errors[0] = tempErr;
-                var tempTrf = best;
-                best = alt;
-                alt = tempTrf;
-            }
         }
-
-        best = convertOpenCVtoPhotonPose(best);
-        alt = convertOpenCVtoPhotonPose(alt);
-         
-        // System.err.println("--------------------------");
-        // System.err.println("object: "+objectPoints.dump());
-        // System.err.println("image: "+imagePoints.dump());
-        // for(int i=0; i<tvecs.size(); i++) {
-        //     System.err.println("rvec["+i+"]: "+rvecs.get(i).dump());
-        //     System.err.println("tvec["+i+"]: "+tvecs.get(i).dump());
-        // }
-        // System.err.println("reproj: "+reprojectionError.dump());
 
         // release our Mats from native memory
         objectPoints.release();
@@ -413,8 +431,6 @@ public final class OpenCVHelp {
             rvecToRotation(rvecs.get(0))
         );
         var alt = new Transform3d();
-
-        best = convertOpenCVtoPhotonPose(best);
         
         // release our Mats from native memory
         objectPoints.release();
@@ -429,18 +445,32 @@ public final class OpenCVHelp {
         return new PNPResults(best, alt, 0, errors[0], 0);
     }
 
-    private static final Rotation3d wpilib = new Rotation3d(
-        new MatBuilder<>(Nat.N3(), Nat.N3()).fill(
-            0, 1, 0,
-            0, 0, 1,
-            1, 0, 0
-        )
-    ).plus(new Rotation3d(0, 0, Math.PI));
+    public static RotTrlTransform3d estimateRigidTransform(
+            List<Translation3d> measuredTrls, List<Translation3d> knownTrls) {
+        var measuredPts = translationToTvec(measuredTrls.toArray(new Translation3d[0]));
+        var knownPts = translationToTvec(knownTrls.toArray(new Translation3d[0]));
 
-    private static Transform3d convertOpenCVtoPhotonPose(Transform3d camToTarg) {
-        return new Transform3d(
-            camToTarg.getTranslation(),
-            wpilib.rotateBy(camToTarg.getRotation())
+        var outputMat = Calib3d.estimateAffine3D(measuredPts, knownPts, null, true);
+        var outputMatrix = matToMatrix(outputMat);
+
+        // rotation matrix
+        var rot = new Rotation3d(outputMatrix.<N3, N3>block(3, 3, 0, 0));
+        rot = rotationEDNtoNWU(rot);
+        // translation vector
+        double[] trlData = outputMatrix.<N3, N1>block(3, 1, 0, 3).getData();
+        var trl = new Translation3d(trlData[0], trlData[1], trlData[2]);
+        trl = CoordinateSystem.convert(trl, CoordinateSystem.EDN(), CoordinateSystem.NWU());
+
+        var trf = new RotTrlTransform3d(
+            rot,
+            trl
         );
+
+        // release our Mats from native memory
+        measuredPts.release();
+        knownPts.release();
+        outputMat.release();
+
+        return trf;
     }
 }

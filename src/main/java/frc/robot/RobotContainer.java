@@ -1,17 +1,19 @@
 package frc.robot;
 
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import static edu.wpi.first.wpilibj2.command.Commands.*;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import org.photonvision.targeting.PhotonPipelineResult;
 import org.photonvision.targeting.TargetCorner;
 
+import edu.wpi.first.apriltag.AprilTag;
+import edu.wpi.first.apriltag.AprilTagFieldLayout;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -27,9 +29,6 @@ import edu.wpi.first.wpilibj2.command.RunCommand;
 import frc.robot.auto.AutoOptions;
 import frc.robot.common.OCXboxController;
 import frc.robot.subsystems.drivetrain.SwerveDrive;
-import frc.robot.util.RotTrlTransform3d;
-import frc.robot.vision.AprilTag;
-import frc.robot.vision.AprilTagFieldLayout;
 import frc.robot.vision.SimCamProperties;
 import frc.robot.vision.PhotonCamera;
 import frc.robot.vision.PhotonCameraSim;
@@ -143,11 +142,11 @@ public class RobotContainer {
         );
 
         // push-to-change driving "speed"
-        controller.rightBumper
+        controller.rightBumper()
             .onTrue(runOnce(()->controller.setDriveSpeed(OCXboxController.kSpeedMax)))
             .onFalse(runOnce(()->controller.setDriveSpeed(OCXboxController.kSpeedDefault)));
 
-        controller.yButton
+        controller.y()
         .whileTrue(run(()->{
             var cameraSim = visionSim.getCameraSim(camera1.name);
             cameraSim.adjustCamera(
@@ -155,7 +154,7 @@ public class RobotContainer {
                         .plus(cameraSim.getRobotToCamera())
             );
         }));
-        controller.aButton
+        controller.a()
             .whileTrue(run(()->{
                 var cameraSim = visionSim.getCameraSim(camera1.name);
                 cameraSim.adjustCamera(
@@ -164,11 +163,11 @@ public class RobotContainer {
                 );
             }));
         
-        controller.rightTriggerButton
+        controller.rightTrigger(0.2)
             .onTrue(runOnce(()-> correcting = true))
             .onFalse(runOnce(() -> correcting = false));
 
-        controller.leftTriggerButton
+        controller.leftTrigger(0.2)
             .onTrue(runOnce(()->{
                 var noise = new Transform2d(
                     new Translation2d(Math.random()*2-1, Math.random()*2-1),
@@ -256,6 +255,7 @@ public class RobotContainer {
                 var alt = new Pose3d()
                     .plus(pnpResults.alt) // field-to-camera
                     .plus(cameraSim.getRobotToCamera().inverse()); // field-to-robot
+                // System.out.println("Reproj: "+pnpResults.bestReprojErr+", "+pnpResults.altReprojErr);
                 bestPoses.clear();
                 altPoses.clear();
                 bestPoses.add(best.toPose2d());

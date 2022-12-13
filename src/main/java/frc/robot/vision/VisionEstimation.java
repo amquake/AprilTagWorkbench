@@ -6,6 +6,7 @@ import java.util.stream.Collectors;
 
 import org.photonvision.targeting.TargetCorner;
 
+import edu.wpi.first.apriltag.AprilTag;
 import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation3d;
@@ -13,7 +14,6 @@ import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.util.Units;
-import edu.wpi.first.wpilibj.Tracer;
 import frc.robot.util.MathUtils;
 import frc.robot.util.RotTrlTransform3d;
 
@@ -109,7 +109,8 @@ public class VisionEstimation {
             knownTrls.add(kTrl.plus(up));
         }
         
-        return estimateRigidTransform(measuredTrls, knownTrls);
+        return new SVDResults(OpenCVHelp.estimateRigidTransform(measuredTrls, knownTrls), 0);
+        // return estimateRigidTransform(measuredTrls, knownTrls);
     }
     /**
      * Finds the rigid transform that best maps the list of translations A onto the list of
@@ -185,10 +186,10 @@ public class VisionEstimation {
         double[] trlData = matTrl.getData();
         
         //System.out.println("matR det: "+matR.det());
-        var rot = new frc.robot.util.Rotation3d(matR);
+        var rot = new Rotation3d(matR);
         // Our estimated transform must first apply rotation, and then translation
         var trf = new RotTrlTransform3d(
-            new Rotation3d(rot.getQuaternion()),
+            rot,
             new Translation3d(trlData[0], trlData[1], trlData[2])
         );
         // measure the error of this estimated transform

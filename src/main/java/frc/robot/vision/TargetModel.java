@@ -56,10 +56,10 @@ public class TargetModel {
         return new TargetModel(
             List.of(
                 // this order is relevant for solvePNP
-                new Translation3d(0, widthMeters/2.0, -heightMeters/2.0),
-                new Translation3d(0, -widthMeters/2.0, -heightMeters/2.0),
                 new Translation3d(0, -widthMeters/2.0, heightMeters/2.0),
-                new Translation3d(0, widthMeters/2.0, heightMeters/2.0)
+                new Translation3d(0, widthMeters/2.0, heightMeters/2.0),
+                new Translation3d(0, widthMeters/2.0, -heightMeters/2.0),
+                new Translation3d(0, -widthMeters/2.0, -heightMeters/2.0)
             ),
             widthMeters, heightMeters
         );

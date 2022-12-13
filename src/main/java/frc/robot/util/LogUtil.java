@@ -17,9 +17,10 @@ public final class LogUtil {
             pose.getX(),
             pose.getY(),
             pose.getZ(),
-            rot.getX(),
-            rot.getY(),
-            rot.getZ()
+            rot.getQuaternion().getW(),
+            rot.getQuaternion().getX(),
+            rot.getQuaternion().getY(),
+            rot.getQuaternion().getZ()
         };
     }
 }

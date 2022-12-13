@@ -11,9 +11,6 @@ import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import static edu.wpi.first.wpilibj2.command.Commands.*;
-import edu.wpi.first.wpilibj2.command.InstantCommand;
-import edu.wpi.first.wpilibj2.command.RunCommand;
-import edu.wpi.first.wpilibj2.command.WaitCommand;
 import frc.robot.subsystems.drivetrain.SwerveDrive;
 
 public class AutoOptions {
@@ -24,7 +21,7 @@ public class AutoOptions {
     public AutoOptions(SwerveDrive drivetrain){
 
         autoOptions.setDefaultOption("Nothing",
-            new InstantCommand(()->drivetrain.stop(), drivetrain)
+            runOnce(()->drivetrain.stop(), drivetrain)
         );
 
         autoOptions.addOption("QuintupleRight",
@@ -36,7 +33,7 @@ public class AutoOptions {
                     true
                 ),
                 drivetrain.stopC(),
-                new WaitCommand(1),
+                waitSeconds(1),
                 autoFollowTrajectory(
                     drivetrain, 
                     "path2", 
@@ -44,7 +41,7 @@ public class AutoOptions {
                     false
                 ),
                 drivetrain.stopC(),
-                new WaitCommand(1),
+                waitSeconds(1),
                 autoFollowTrajectory(
                     drivetrain, 
                     "path3", 

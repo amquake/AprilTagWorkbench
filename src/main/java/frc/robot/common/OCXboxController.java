@@ -10,32 +10,18 @@ package frc.robot.common;
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.filter.SlewRateLimiter;
 import edu.wpi.first.wpilibj.XboxController;
-import edu.wpi.first.wpilibj2.command.button.JoystickButton;
-import edu.wpi.first.wpilibj2.command.button.POVButton;
+import edu.wpi.first.wpilibj.GenericHID.RumbleType;
+import edu.wpi.first.wpilibj.event.BooleanEvent;
+import edu.wpi.first.wpilibj.event.EventLoop;
+import edu.wpi.first.wpilibj2.command.CommandScheduler;
+import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
+import edu.wpi.first.wpilibj2.command.button.Trigger;
 
 /**
  * Custom {@link XboxController} wrapper to add convenience features for
  * driving.
  */
-public class OCXboxController extends XboxController {
-
-    // Pre-made buttons to reduce verbosity
-    public final JoystickButton aButton;
-    public final JoystickButton bButton;
-    public final JoystickButton xButton;
-    public final JoystickButton yButton;
-    public final JoystickButton leftBumper;
-    public final JoystickButton rightBumper;
-    public final JoystickButton backButton;
-    public final JoystickButton startButton;
-    public final JoystickButton leftStick;
-    public final JoystickButton rightStick;
-    public final edu.wpi.first.wpilibj2.command.button.Button leftTriggerButton; // curse disambiguation
-    public final edu.wpi.first.wpilibj2.command.button.Button rightTriggerButton;
-    public final POVButton povUpButton;
-    public final POVButton povRightButton;
-    public final POVButton povDownButton;
-    public final POVButton povLeftButton;
+public class OCXboxController extends CommandXboxController {
 
     private static final double kDeadband = 0.12;
 
@@ -55,23 +41,6 @@ public class OCXboxController extends XboxController {
      */
     public OCXboxController(int port) {
         super(port);
-
-        aButton = new JoystickButton(this, XboxController.Button.kA.value);
-        bButton = new JoystickButton(this, XboxController.Button.kB.value);
-        xButton = new JoystickButton(this, XboxController.Button.kX.value);
-        yButton = new JoystickButton(this, XboxController.Button.kY.value);
-        leftBumper = new JoystickButton(this, XboxController.Button.kLeftBumper.value);
-        rightBumper = new JoystickButton(this, XboxController.Button.kRightBumper.value);
-        backButton = new JoystickButton(this, XboxController.Button.kBack.value);
-        startButton = new JoystickButton(this, XboxController.Button.kStart.value);
-        leftStick = new JoystickButton(this, XboxController.Button.kLeftStick.value);
-        rightStick = new JoystickButton(this, XboxController.Button.kRightStick.value);
-        leftTriggerButton = new edu.wpi.first.wpilibj2.command.button.Button(() -> getLeftTriggerAxis() > 0.15);
-        rightTriggerButton = new edu.wpi.first.wpilibj2.command.button.Button(() -> getRightTriggerAxis() > 0.15);
-        povUpButton = new POVButton(this, 0);
-        povRightButton = new POVButton(this, 90);
-        povDownButton = new POVButton(this, 180);
-        povLeftButton = new POVButton(this, 270);
     }
 
     /**
@@ -161,12 +130,61 @@ public class OCXboxController extends XboxController {
         turnLimiter.reset(0);
     }
 
+    /** Rumble both controller sides */
     public void rumble(double value){
-        setRumble(RumbleType.kRightRumble, value);
-        setRumble(RumbleType.kLeftRumble, value);
+        getHID().setRumble(RumbleType.kRightRumble, value);
+        getHID().setRumble(RumbleType.kLeftRumble, value);
     }
+    /** Rumble one controller side */
     public void rumble(boolean left, double value){
         RumbleType side = left ? RumbleType.kLeftRumble : RumbleType.kRightRumble;
-        setRumble(side, value);
+        getHID().setRumble(side, value);
+    }
+
+    // ----- Trigger factories
+
+    /**
+     * Constructs an event instance around the left trigger passing a threshold.
+     *
+     * @param threshold Trigger axis values greater than this will trigger the event
+     * @return an event instance representing the left trigger exceeding the threshold's digital attached
+     *     to the {@link CommandScheduler#getDefaultButtonLoop() default scheduler button loop}.
+     * @see #leftTrigger(EventLoop)
+     */
+    public Trigger leftTrigger(double threshold) {
+        return leftTrigger(CommandScheduler.getInstance().getDefaultButtonLoop(), threshold);
+    }
+    /**
+     * Constructs an event instance around the left trigger passing a threshold.
+     *
+     * @param loop the event loop instance to attach the event to.
+     * @param threshold Trigger axis values greater than this will trigger the event
+     * @return an event instance representing the left trigger exceeding the threshold's digital signal
+     *     attached to the given loop.
+     */
+    public Trigger leftTrigger(EventLoop loop, double threshold) {
+        return new BooleanEvent(loop, () -> getLeftTriggerAxis() > threshold).castTo(Trigger::new);
+    }
+    /**
+     * Constructs an event instance around the right trigger passing a threshold.
+     *
+     * @param threshold Trigger axis values greater than this will trigger the event
+     * @return an event instance representing the right trigger exceeding the threshold's digital attached
+     *     to the {@link CommandScheduler#getDefaultButtonLoop() default scheduler button loop}.
+     * @see #rightTrigger(EventLoop)
+     */
+    public Trigger rightTrigger(double threshold) {
+        return rightTrigger(CommandScheduler.getInstance().getDefaultButtonLoop(), threshold);
+    }
+    /**
+     * Constructs an event instance around the right trigger passing a threshold.
+     *
+     * @param loop the event loop instance to attach the event to.
+     * @param threshold Trigger axis values greater than this will trigger the event
+     * @return an event instance representing the right trigger exceeding the threshold's digital signal
+     *     attached to the given loop.
+     */
+    public Trigger rightTrigger(EventLoop loop, double threshold) {
+        return new BooleanEvent(loop, () -> getRightTriggerAxis() > threshold).castTo(Trigger::new);
     }
 }

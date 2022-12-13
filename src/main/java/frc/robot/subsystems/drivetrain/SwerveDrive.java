@@ -9,6 +9,7 @@ import edu.wpi.first.math.VecBuilder;
 import edu.wpi.first.math.controller.HolonomicDriveController;
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.controller.ProfiledPIDController;
+import edu.wpi.first.math.estimator.SwerveDrivePoseEstimator;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Transform2d;
@@ -28,6 +29,7 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.CommandBase;
 import edu.wpi.first.wpilibj2.command.InstantCommand;
 import edu.wpi.first.wpilibj2.command.SubsystemBase;
+
 import static frc.robot.RobotConstants.*;
 import frc.robot.auto.AutoConstants;
 import frc.robot.util.LogUtil;
@@ -242,9 +244,6 @@ public class SwerveDrive extends SubsystemBase {
 
     public Pose2d getPose() {
         return poseEstimator.getEstimatedPosition();
-    }
-    public Pose2d getPose(double secondsAgo) {
-        return poseEstimator.getEstimatedPosition(secondsAgo);
     }
     public Pose2d getPerfPose() {
         return perfOdometry.getPoseMeters();
