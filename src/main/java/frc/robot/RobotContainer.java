@@ -1,7 +1,6 @@
 package frc.robot;
 
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
-import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import static edu.wpi.first.wpilibj2.command.Commands.*;
 
@@ -29,11 +28,11 @@ import edu.wpi.first.wpilibj2.command.RunCommand;
 import frc.robot.auto.AutoOptions;
 import frc.robot.common.OCXboxController;
 import frc.robot.subsystems.drivetrain.SwerveDrive;
-import frc.robot.vision.SimCamProperties;
-import frc.robot.vision.PhotonCamera;
-import frc.robot.vision.PhotonCameraSim;
-import frc.robot.vision.SimVisionSystem;
-import frc.robot.vision.VisionEstimation;
+import frc.robot.vision.estimation.CameraProperties;
+import frc.robot.vision.estimation.VisionEstimation;
+import frc.robot.vision.sim.PhotonCamera;
+import frc.robot.vision.sim.PhotonCameraSim;
+import frc.robot.vision.sim.SimVisionSystem;
 
 public class RobotContainer {
     private final SwerveDrive drivetrain = new SwerveDrive();
@@ -65,42 +64,43 @@ public class RobotContainer {
         lastResults = new ArrayList<>(cameras.size());
         cameras.forEach(c -> lastResults.add(new PhotonPipelineResult()));
 
-        visionSim = new SimVisionSystem("main",
+        visionSim = new SimVisionSystem("main");
+        visionSim.addCamera(
             new PhotonCameraSim(
                 camera1,
-                SimCamProperties.PI4_PICAM2_480p,
-                new Transform3d( // robot to camera
-                    new Translation3d(
-                        Units.inchesToMeters(10),
-                        0,
-                        Units.inchesToMeters(25)
-                    ),
-                    new Rotation3d(
-                        0,
-                        -Math.toRadians(18),
-                        0
-                    )
+                CameraProperties.PI4_PICAM2_480p
+            ),
+            new Transform3d( // robot to camera
+                new Translation3d(
+                    Units.inchesToMeters(10),
+                    0,
+                    Units.inchesToMeters(25)
+                ),
+                new Rotation3d(
+                    0,
+                    -Math.toRadians(18),
+                    0
                 )
             )
-            //,
-            // new PhotonCameraSim(
-            //     camera2,
-            //     SimCamProperties.PI4_PICAM2_480p,
-            //     new Transform3d( // robot to camera
-            //         new Translation3d(
-            //             Units.inchesToMeters(-10),
-            //             0,
-            //             Units.inchesToMeters(25)
-            //         ),
-            //         new Rotation3d(
-            //             0,
-            //             -Math.toRadians(18),
-            //             Math.PI
-            //         )
-            //     )
-            // )
-            
         );
+        // visionSim.addCamera(
+        //     new PhotonCameraSim(
+        //         camera2,
+        //         SimCamProperties.PI4_PICAM2_480p
+        //     ),
+        //     new Transform3d( // robot to camera
+        //         new Translation3d(
+        //             Units.inchesToMeters(-10),
+        //             0,
+        //             Units.inchesToMeters(25)
+        //         ),
+        //         new Rotation3d(
+        //             0,
+        //             -Math.toRadians(18),
+        //             Math.PI
+        //         )
+        //     )
+        // );            
 
         try {
             tagLayout = new AprilTagFieldLayout("2022-taglayout.json");
@@ -149,18 +149,18 @@ public class RobotContainer {
         controller.y()
         .whileTrue(run(()->{
             var cameraSim = visionSim.getCameraSim(camera1.name);
-            cameraSim.adjustCamera(
+            visionSim.adjustCamera(cameraSim,
                 new Transform3d(new Translation3d(), new Rotation3d(0, -0.01, 0))
-                        .plus(cameraSim.getRobotToCamera())
+                        .plus(visionSim.getRobotToCamera(cameraSim))
             );
         }));
         controller.a()
             .whileTrue(run(()->{
                 var cameraSim = visionSim.getCameraSim(camera1.name);
-                cameraSim.adjustCamera(
-                    new Transform3d(new Translation3d(), new Rotation3d(0, 0.01, 0))
-                        .plus(cameraSim.getRobotToCamera())
-                );
+                visionSim.adjustCamera(cameraSim,
+                new Transform3d(new Translation3d(), new Rotation3d(0, 0.01, 0))
+                        .plus(visionSim.getRobotToCamera(cameraSim))
+            );
             }));
         
         controller.rightTrigger(0.2)
@@ -194,8 +194,8 @@ public class RobotContainer {
 
         var visCorners = new ArrayList<TargetCorner>();
         var knownVisTags = new ArrayList<AprilTag>();
-        var relVisTags = new ArrayList<AprilTag>();
-        var relVisCornerTrls = new ArrayList<Translation3d>();
+        var relVisTagsPnP = new ArrayList<AprilTag>();
+        var relVisTagsTrig = new ArrayList<AprilTag>();
 
         var bestPoses = new ArrayList<Pose2d>();
         var altPoses = new ArrayList<Pose2d>();
@@ -205,6 +205,7 @@ public class RobotContainer {
         for(int i = 0; i < cameras.size(); i++) {
             var camera = cameras.get(i);
             var cameraSim = visionSim.getCameraSim(camera.name);
+            var robotToCamera = visionSim.getRobotToCamera(cameraSim);
             var result = camera.getLatestResult();
 
             if(result.equals(lastResults.get(i))) continue;
@@ -220,15 +221,21 @@ public class RobotContainer {
                 knownVisTags.add(new AprilTag(target.getFiducialId(), tagPose));
                 Transform3d camToBest = target.getBestCameraToTarget();
                 // tags estimated relative to robot
-                relVisTags.add(new AprilTag(
+                relVisTagsPnP.add(new AprilTag(
                     target.getFiducialId(),
-                    new Pose3d().plus(cameraSim.getRobotToCamera()).plus(camToBest)
+                    new Pose3d().plus(robotToCamera).plus(camToBest)
+                ));
+                var undistortedTarget = cameraSim.prop.undistort2dTarget(target);
+                relVisTagsTrig.addAll(VisionEstimation.estimateTagsTrig(
+                    robotToCamera,
+                    List.of(undistortedTarget),
+                    tagLayout
                 ));
                 Transform3d camToAlt = target.getAlternateCameraToTarget();
 
                 var bestPose = tagPose
                     .transformBy(camToBest.inverse())
-                    .transformBy(cameraSim.getRobotToCamera().inverse())
+                    .transformBy(robotToCamera.inverse())
                     .toPose2d();
                 
                 if(correcting) drivetrain.addVisionMeasurement(bestPose, result.getLatencyMillis()/1000.0);
@@ -237,25 +244,29 @@ public class RobotContainer {
                 altPoses.add(
                     tagPose
                         .transformBy(camToAlt.inverse())
-                        .transformBy(cameraSim.getRobotToCamera().inverse())
+                        .transformBy(robotToCamera.inverse())
+                        .toPose2d()
+                );
+                testPoses.add(
+                    new Pose3d(drivetrain.getPerfPose())
+                        .plus(new Transform3d(new Pose3d(), relVisTagsTrig.get(relVisTagsTrig.size()-1).pose))
                         .toPose2d()
                 );
             }
 
             // multi-target solvePNP
             if(result.getTargets().size() > 1) {
-                var pnpResults = VisionEstimation.estimateTagsPNP(
+                var pnpResults = VisionEstimation.estimateCamPosePNP(
                     cameraSim.prop,
                     visCorners,
                     knownVisTags
                 );
                 var best = new Pose3d()
                     .plus(pnpResults.best) // field-to-camera
-                    .plus(cameraSim.getRobotToCamera().inverse()); // field-to-robot
+                    .plus(robotToCamera.inverse()); // field-to-robot
                 var alt = new Pose3d()
                     .plus(pnpResults.alt) // field-to-camera
-                    .plus(cameraSim.getRobotToCamera().inverse()); // field-to-robot
-                // System.out.println("Reproj: "+pnpResults.bestReprojErr+", "+pnpResults.altReprojErr);
+                    .plus(robotToCamera.inverse()); // field-to-robot
                 bestPoses.clear();
                 altPoses.clear();
                 bestPoses.add(best.toPose2d());
@@ -263,11 +274,17 @@ public class RobotContainer {
                 // testPoses.add(best.toPose2d());
             }
         }
+        // multi-target SVD
         if(knownVisTags.size() > 0) {
-            var estTrf = VisionEstimation.estimateTagsLS(
-                relVisTags,
+            // var estTrf = VisionEstimation.estimateTransformLS(
+            //     relVisTagsPnP,
+            //     knownVisTags,
+            //     true
+            // );
+            var estTrf = VisionEstimation.estimateTransformLS(
+                relVisTagsTrig,
                 knownVisTags,
-                true
+                false
             );
             var estRobotPose = estTrf.trf.apply(new Pose3d());
             testPoses.add(estRobotPose.toPose2d());

@@ -22,7 +22,7 @@
  * SOFTWARE.
  */
 
-package frc.robot.vision;
+package frc.robot.vision.sim;
 
 import edu.wpi.first.math.MatBuilder;
 import edu.wpi.first.math.MathUtil;
@@ -42,9 +42,13 @@ import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.util.CameraTargetRelation;
+import frc.robot.vision.estimation.CameraProperties;
+import frc.robot.vision.estimation.OpenCVHelp;
+import frc.robot.vision.estimation.VisionEstimation;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -70,16 +74,16 @@ public class PhotonCameraSim {
     private final NetworkTableEntry versionEntry;
 
     /**
-     * This simulated camera's {@link SimCamProperties}
+     * This simulated camera's {@link CameraProperties}
      */
-    public final SimCamProperties prop;
+    public final CameraProperties prop;
     private double lastTime = Timer.getFPGATimestamp();
     private double msUntilNextFrame = 0;
     
     private double maxSightRangeMeters = Double.MAX_VALUE;
-    private double minTargetAreaPx = 100;
+    private static final double kDefaultMinAreaPx = 100;
+    private double minTargetAreaPercent;
 
-    private Transform3d robotToCamera;
     private final TimeInterpolatableBuffer<Pose3d> camPoseBuffer = TimeInterpolatableBuffer.createBuffer(1.5);
 
     private final Field2d dbgCorners = new Field2d();
@@ -94,10 +98,9 @@ public class PhotonCameraSim {
      * <p>By default, the minimum target area is 100 pixels and there is no maximum sight range.
      *
      * @param camera The camera to be simulated
-     * @param robotToCamera Transform in meters to move from the robot's origin to the camera's pose
      */
-    public PhotonCameraSim(PhotonCamera camera, Transform3d robotToCamera) {
-        this(camera, SimCamProperties.PERFECT_90DEG, robotToCamera);
+    public PhotonCameraSim(PhotonCamera camera) {
+        this(camera, CameraProperties.PERFECT_90DEG);
     }
     /**
      * Constructs a handle for simulating {@link PhotonCamera} values.
@@ -108,12 +111,11 @@ public class PhotonCameraSim {
      *
      * @param camera The camera to be simulated
      * @param prop Properties of this camera such as FOV and FPS
-     * @param robotToCamera Transform in meters to move from the robot's origin to the camera's pose
      */
-    public PhotonCameraSim(PhotonCamera camera, SimCamProperties prop, Transform3d robotToCamera) {
+    public PhotonCameraSim(PhotonCamera camera, CameraProperties prop) {
         this.cam = camera;
         this.prop = prop;
-        this.robotToCamera = robotToCamera;
+        setMinTargetAreaPixels(kDefaultMinAreaPx);
         
         var rootTable = camera.rootTable;
         latencyMillisEntry = rootTable.getEntry("latencyMillis");
@@ -134,18 +136,17 @@ public class PhotonCameraSim {
      *
      * @param camera The camera to be simulated
      * @param prop Properties of this camera such as FOV and FPS
-     * @param robotToCamera Transform in meters to move from the robot's origin to the camera's pose
-     * @param minTargetAreaPx The minimum number of pixels a detected target must take up in the camera's
-     *     image to be processed. Match this with your contour filtering settings in the PhotonVision
-     *     GUI. (pixels = percent / 100 * resolution area)
+     * @param minTargetAreaPercent The minimum percentage(0 - 100) a detected target must take up of the
+     *     camera's image to be processed. Match this with your contour filtering settings in the
+     *     PhotonVision GUI.
      * @param maxSightRangeMeters Maximum distance at which the target is illuminated to your camera.
      *     Note that minimum target area of the image is separate from this.
      */
     public PhotonCameraSim(
-            PhotonCamera camera, SimCamProperties prop, Transform3d robotToCamera,
-            double minTargetAreaPx, double maxSightRangeMeters) {
-        this(camera, prop, robotToCamera);
-        this.minTargetAreaPx = minTargetAreaPx;
+            PhotonCamera camera, CameraProperties prop,
+            double minTargetAreaPercent, double maxSightRangeMeters) {
+        this(camera, prop);
+        this.minTargetAreaPercent = minTargetAreaPercent;
         this.maxSightRangeMeters = maxSightRangeMeters;
     }
 
@@ -153,9 +154,6 @@ public class PhotonCameraSim {
         return cam;
     }
 
-    public Transform3d getRobotToCamera() {
-        return robotToCamera;
-    }
     /**
      * Get the camera pose in meters saved by the vision system secondsAgo.
      * @param secondsAgo Seconds to look into the past
@@ -164,11 +162,11 @@ public class PhotonCameraSim {
         return camPoseBuffer.getSample(Timer.getFPGATimestamp() - secondsAgo).orElse(new Pose3d());
     }
 
-    public double getMinTargetAreaPx() {
-        return minTargetAreaPx;
-    }
     public double getMinTargetAreaPercent() {
-        return minTargetAreaPx / prop.getResArea() * 100;
+        return minTargetAreaPercent;
+    }
+    public double getMinTargetAreaPixels() {
+        return minTargetAreaPercent / 100.0 * prop.getResArea();
     }
     public double getMaxSightRangeMeters() {
         return maxSightRangeMeters;
@@ -200,14 +198,13 @@ public class PhotonCameraSim {
     }
     /**
      * Determines if this target can be detected after image projection.
-     * @param areaPixels The target contour's area in pixels of the image
+     * @param areaPercent The target contour's area percentage of the image
      * @param corners The corners of the target as image points(x,y)
      * @return If the target area is large enough and the corners are inside
      *     the camera's FOV
-     * @see OpenCVHelp#projectPoints(Pose3d, SimCamProperties, List)
-     * @see OpenCVHelp#getContourAreaPx(List)
+     * @see CameraProperties#getContourAreaPercent(List)
      */
-    public boolean canSeeCorners(double areaPixels, List<TargetCorner> corners) {
+    public boolean canSeeCorners(double areaPercent, List<TargetCorner> corners) {
         // corner is outside of resolution
         for(var corner : corners) {
             if(MathUtil.clamp(corner.x, 0, prop.getResWidth()) != corner.x ||
@@ -216,7 +213,7 @@ public class PhotonCameraSim {
             }
         }
         // target too small
-        return areaPixels >= minTargetAreaPx;
+        return areaPercent >= minTargetAreaPercent;
     }
 
     /**
@@ -245,11 +242,18 @@ public class PhotonCameraSim {
     }
 
     /**
+     * The minimum percentage(0 - 100) a detected target must take up of the camera's image
+     * to be processed.
+     */
+    public void setMinTargetAreaPercent(double areaPercent) {
+        this.minTargetAreaPercent = areaPercent;
+    }
+    /**
      * The minimum number of pixels a detected target must take up in the camera's image
      * to be processed.
      */
-    public void setMinTargetAreaPx(double areaPx) {
-        this.minTargetAreaPx = areaPx;
+    public void setMinTargetAreaPixels(double areaPx) {
+        this.minTargetAreaPercent = areaPx / prop.getResArea() * 100;
     }
     /**
      * Maximum distance at which the target is illuminated to your camera.
@@ -259,27 +263,21 @@ public class PhotonCameraSim {
         this.maxSightRangeMeters = rangeMeters;
     }
     /**
-     * Adjust the camera position relative to the robot. Use this if your camera is on a gimbal or
-     * turret or some other mobile platform.
-     *
-     * @param robotToCamera New transform from the robot to the camera
-     */
-    public void adjustCamera(Transform3d robotToCamera) {
-        this.robotToCamera = robotToCamera;
-    }
-    /**
      * Update the current camera pose given the current robot pose in meters.
      * This is dependent on the robot-to-camera transform, and camera poses are saved over time.
      */
-    public void updateCameraPose(Pose3d robotPoseMeters) {
-        camPoseBuffer.addSample(Timer.getFPGATimestamp(), robotPoseMeters.transformBy(robotToCamera));
+    public void updateCameraPose(Pose3d cameraPose) {
+        camPoseBuffer.addSample(Timer.getFPGATimestamp(), cameraPose);
+    }
+    public void clearCameraPoses() {
+        camPoseBuffer.clear();
     }
     public void logDebugCorners(String table) {
         SmartDashboard.putData(table+"/"+cam.name+"-cam corners", dbgCorners);
     }
 
     public List<PhotonTrackedTarget> process(
-            double latencyMillis, Pose3d cameraPose, List<SimVisionTarget> targets) {
+            double latencyMillis, Pose3d cameraPose, Collection<SimVisionTarget> targets) {
         var visibleTgts = new ArrayList<PhotonTrackedTarget>();
         var dbgVisCorners = new ArrayList<TargetCorner>();
         var dbgBestCorners = new ArrayList<TargetCorner>();
@@ -303,12 +301,11 @@ public class PhotonCameraSim {
             targetCorners = prop.estPixelNoise(targetCorners);
             // find the 2d yaw/pitch
             var boundingCenterRot = prop.getPixelRot(targetCorners);
-            // find contour area
-            double areaPixels = OpenCVHelp.getContourAreaPx(targetCorners);
-            double areaPercent = areaPixels / prop.getResArea() * 100;
+            // find contour area            
+            double areaPercent = prop.getContourAreaPercent(targetCorners);
 
             // projected target can't be detected, skip to next
-            if(!canSeeCorners(areaPixels, targetCorners)) continue;
+            if(!canSeeCorners(areaPercent, targetCorners)) continue;
 
             // only do 3d estimation if we have a planar target
             var pnpSim = new VisionEstimation.PNPResults();
@@ -319,7 +316,7 @@ public class PhotonCameraSim {
             visibleTgts.add(
                 new PhotonTrackedTarget(
                     Math.toDegrees(boundingCenterRot.getZ()),
-                    Math.toDegrees(boundingCenterRot.getY()),
+                    -Math.toDegrees(boundingCenterRot.getY()),
                     areaPercent,
                     Math.toDegrees(boundingCenterRot.getX()),
                     tgt.id,

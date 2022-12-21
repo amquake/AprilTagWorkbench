@@ -3,10 +3,6 @@ package frc.robot.util;
 import java.util.Arrays;
 import java.util.List;
 
-import org.ejml.data.DMatrixRMaj;
-import org.ejml.dense.row.factory.DecompositionFactory_DDRM;
-import org.ejml.simple.SimpleMatrix;
-
 import edu.wpi.first.math.MathUtil;
 import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.Nat;
@@ -145,35 +141,25 @@ public class MathUtils {
         }
         return true;
     }
+
     /**
-     * Orthogonalize an input matrix using a QR decomposition. QR decompositions decompose a
-     * rectangular matrix 'A' such that 'A=QR', where Q is the closest orthogonal matrix to the input,
-     * and R is an upper triangular matrix.
+     * Finds the bounded center (average of minimum and maximum) of these values.
      */
-    public static Matrix<N3, N3> orthogonalizeRotationMatrix(Matrix<N3, N3> input) {
-        var a = DecompositionFactory_DDRM.qr(3, 3);
-        if (!a.decompose(input.getStorage().getDDRM())) {
-            // best we can do is return the input
-            return input;
-        }
-
-        // Grab results (thanks for this _great_ api, EJML)
-        var Q = new DMatrixRMaj(3, 3);
-        var R = new DMatrixRMaj(3, 3);
-        a.getQ(Q, false);
-        a.getR(R, false);
-
-        // Fix signs in R if they're < 0 so it's close to an identity matrix
-        // (our QR decomposition implementation sometimes flips the signs of columns)
-        for (int colR = 0; colR < 3; ++colR) {
-            if (R.get(colR, colR) < 0) {
-                for (int rowQ = 0; rowQ < 3; ++rowQ) {
-                    Q.set(rowQ, colR, -Q.get(rowQ, colR));
-                }
+    public static double boundedCenter(double... values) {
+        double minX = 0;
+        double maxX = 0;
+        for(int i = 0; i < values.length; i++) {
+            double x = values[i];
+            if(i == 0) {
+                minX = x;
+                maxX = x;
+            }
+            else {
+                minX = Math.min(minX, x);
+                maxX = Math.max(maxX, x);
             }
         }
-
-        return new Matrix<>(new SimpleMatrix(Q));
+        return (minX + maxX) / 2.0;
     }
 
     public static boolean within(int value, int from, int to){

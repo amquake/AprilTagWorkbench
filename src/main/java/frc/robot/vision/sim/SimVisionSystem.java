@@ -22,12 +22,13 @@
  * SOFTWARE.
  */
 
-package frc.robot.vision;
+package frc.robot.vision.sim;
 
 import edu.wpi.first.apriltag.AprilTag;
 import edu.wpi.first.apriltag.AprilTagFieldLayout;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
+import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.interpolation.TimeInterpolatableBuffer;
 import edu.wpi.first.math.util.Units;
 import edu.wpi.first.wpilibj.Timer;
@@ -44,33 +45,98 @@ import java.util.stream.Collectors;
 
 public class SimVisionSystem {
 
+    private final String tableName;
+
     private final Map<String, PhotonCameraSim> camSimMap = new HashMap<>();
+    private final Map<PhotonCameraSim, Transform3d> camTrfMap = new HashMap<>();
 
     private final TimeInterpolatableBuffer<Pose3d> robotPoseBuffer = TimeInterpolatableBuffer.createBuffer(1.5);
 
-    private Map<String, Set<SimVisionTarget>> tgtList = new HashMap<>();
+    private Map<String, Set<SimVisionTarget>> targetSets = new HashMap<>();
 
     private final Field2d dbgField;
 
     /**
      * Create a simulated vision system involving a camera(s) and coprocessor(s) mounted on a mobile robot
      * running PhotonVision, detecting one or more targets scattered around the field.
-     *
-     * @param cameraSims The simulated cameras to process with
      */
-    public SimVisionSystem(String visionSystemName, PhotonCameraSim... cameraSims) {
+    public SimVisionSystem(String visionSystemName) {
         dbgField = new Field2d();
-        String tableName = "vision-"+visionSystemName;
+        tableName = "vision-"+visionSystemName;
         SmartDashboard.putData(tableName + "/Sim Field", dbgField);
+    }
 
-        for(var cameraSim : cameraSims) {
-            var existing = camSimMap.putIfAbsent(cameraSim.getCamera().name, cameraSim);
-            if(existing == null) {
-                cameraSim.logDebugCorners(tableName);
-            }
+    /**
+     * Get one of the simulated cameras.
+     */
+    public PhotonCameraSim getCameraSim(String name) {
+        return camSimMap.get(name);
+    }
+    /**
+     * Get a simulated camera's position relative to the robot.
+     */
+    public Transform3d getRobotToCamera(String name) {
+        return camTrfMap.get(camSimMap.get(name));
+    }
+    /**
+     * Get a simulated camera's position relative to the robot.
+     */
+    public Transform3d getRobotToCamera(PhotonCameraSim cameraSim) {
+        return camTrfMap.get(cameraSim);
+    }
+    /**
+     * Adds a simulated camera to this vision system with a specified robot-to-camera transformation.
+     * The vision targets registered with this vision system simulation will be observed by the simulated
+     * {@link PhotonCamera}.
+     * 
+     * @param cameraSim The camera simulation
+     * @param robotToCamera The transform from the robot pose to the camera pose
+     */
+    public void addCamera(PhotonCameraSim cameraSim, Transform3d robotToCamera) {
+        var existing = camSimMap.putIfAbsent(cameraSim.getCamera().name, cameraSim);
+        if(existing == null) {
+            cameraSim.logDebugCorners(tableName);
         }
+        camTrfMap.put(cameraSim, robotToCamera);
+    }
+    /**
+     * Remove all simulated cameras from this vision system.
+     */
+    public void clearCameras() {
+        camSimMap.clear();
+        camTrfMap.clear();
+    }
+    /**
+     * Remove a simulated camera from this vision system.
+     * 
+     * @return If the camera was present and removed
+     */
+    public boolean removeCamera(PhotonCameraSim cameraSim) {
+        boolean success = camSimMap.remove(cameraSim.getCamera().name) != null;
+        camTrfMap.remove(cameraSim);
+        return success;
+    }
+    /**
+     * Adjust a camera's position relative to the robot. Use this if your camera is on a gimbal or
+     * turret or some other mobile platform.
+     *
+     * @param cameraSim The simulated camera to change the relative position of
+     * @param robotToCamera New transform from the robot to the camera
+     */
+    public void adjustCamera(PhotonCameraSim cameraSim, Transform3d robotToCamera) {
+        camTrfMap.put(cameraSim, robotToCamera);
     }
     
+    public Set<SimVisionTarget> getVisionTargets() {
+        var all = new HashSet<SimVisionTarget>();
+        for(var entry : targetSets.entrySet()) {
+            all.addAll(entry.getValue());
+        }
+        return all;
+    }
+    public Set<SimVisionTarget> getVisionTargets(String type) {
+        return targetSets.get(type);
+    }
     /**
      * Adds targets on the field which your vision system is designed to detect. The
      * {@link PhotonCamera}s simulated from this system will report the location of the camera
@@ -106,29 +172,27 @@ public class SimVisionSystem {
     /**
      * Adds targets on the field which your vision system is designed to detect. The
      * {@link PhotonCamera}s simulated from this system will report the location of the camera
-     * relative to the subset of these targets which are visible from the given camera position.
-     * 
-     * <p>By default these are added under the type "targets".
+     * relative to the subset of these targets which are visible from the given camera position. 
      * 
      * @param type Type of target (e.g. "cargo").
      * @param targets Targets to add to the simulated field
      */
     public void addVisionTargets(String type, SimVisionTarget... targets) {
-        if(tgtList.get(type) == null) tgtList.put(type, new HashSet<>());
+        if(targetSets.get(type) == null) targetSets.put(type, new HashSet<>());
         for(var tgt : targets) {
-            tgtList.get(type).add(tgt);
+            targetSets.get(type).add(tgt);
         }
     }
     public void clearVisionTargets() {
-        tgtList.clear();
+        targetSets.clear();
     }
     public Set<SimVisionTarget> removeVisionTargets(String type) {
-        return tgtList.remove(type);
+        return targetSets.remove(type);
     }
     public Set<SimVisionTarget> removeVisionTargets(SimVisionTarget... targets) {
         var removeList = List.of(targets);
         var removedSet = new HashSet<SimVisionTarget>();
-        for(var entry : tgtList.entrySet()) {
+        for(var entry : targetSets.entrySet()) {
             entry.getValue().removeIf(t -> {
                 if(removeList.contains(t)) {
                     removedSet.add(t);
@@ -140,13 +204,10 @@ public class SimVisionSystem {
         return removedSet;
     }
 
-    /**
-     * Get one of the simulated cameras.
-     */
-    public PhotonCameraSim getCameraSim(String name) {
-        return camSimMap.get(name);
+    public void clearRobotPoses() {
+        robotPoseBuffer.clear();
+        camSimMap.forEach((name, cam) -> cam.clearCameraPoses());
     }
-
     /**
      * Get the robot pose in meters saved by the vision system secondsAgo.
      * @param secondsAgo Seconds to look into the past
@@ -173,7 +234,7 @@ public class SimVisionSystem {
      * @param robotPoseMeters The current robot pose in meters
      */
     public void update(Pose3d robotPoseMeters) {
-        var targetTypes = tgtList.entrySet();
+        var targetTypes = targetSets.entrySet();
         // update vision targets on field
         targetTypes.forEach(entry -> dbgField.getObject(entry.getKey()).setPoses(
             entry.getValue().stream().map(t -> t.getPose().toPose2d()).collect(Collectors.toList())
@@ -197,7 +258,7 @@ public class SimVisionSystem {
             if(optionalLatency.isEmpty()) continue;
             double latencyMillis = optionalLatency.get();
             // save "real" camera poses over time
-            camSim.updateCameraPose(robotPoseMeters);
+            camSim.updateCameraPose(robotPoseMeters.transformBy(getRobotToCamera(camSim)));
             // display camera latency milliseconds ago
             Pose3d cameraPose = camSim.getCameraPose(latencyMillis / 1000.0);
             cameraPose2ds.add(cameraPose.toPose2d());

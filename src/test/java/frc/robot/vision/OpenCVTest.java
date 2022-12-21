@@ -12,6 +12,9 @@ import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.util.Units;
 import frc.robot.util.CameraTargetRelation;
+import frc.robot.vision.estimation.CameraProperties;
+import frc.robot.vision.estimation.OpenCVHelp;
+import frc.robot.vision.sim.SimVisionTarget;
 
 public class OpenCVTest {
     private static final double kTrlDelta = 0.005;
@@ -37,7 +40,7 @@ public class OpenCVTest {
         assertSame(trf1.getRotation(), trf2.getRotation());
     }
 
-    private static final SimCamProperties prop = new SimCamProperties();
+    private static final CameraProperties prop = new CameraProperties();
 
     @Test
     public void testTrlConvert() {

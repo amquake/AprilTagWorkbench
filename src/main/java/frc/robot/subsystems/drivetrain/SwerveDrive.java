@@ -341,7 +341,7 @@ public class SwerveDrive extends SubsystemBase {
         SmartDashboard.putNumber("Drive/Heading", pose.getRotation().getDegrees());
         SmartDashboard.putNumber("Drive/X", pose.getX());
         SmartDashboard.putNumber("Drive/Y", pose.getY());
-        SmartDashboard.putNumberArray("Drive/PoseArray", LogUtil.toPoseArray(pose));
+        SmartDashboard.putNumberArray("Drive/PoseArray", LogUtil.toPoseArray2d(pose));
         ChassisSpeeds chassisSpeeds = getChassisSpeeds();
         SmartDashboard.putNumber("Drive/Target Heading", Math.toDegrees(thetaController.getSetpoint().position));
         SmartDashboard.putNumber("Drive/VX", chassisSpeeds.vxMetersPerSecond);

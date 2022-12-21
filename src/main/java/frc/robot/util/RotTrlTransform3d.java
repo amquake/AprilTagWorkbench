@@ -9,7 +9,7 @@ import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation3d;
 
 /**
- * Represents a transform that first rotates the pose around the origin,
+ * Represents a transformation that first rotates a pose around the origin,
  * and then translates it.
  */
 public class RotTrlTransform3d {
@@ -17,33 +17,58 @@ public class RotTrlTransform3d {
     private final Rotation3d rot;
 
     public RotTrlTransform3d() {
-        this(new Transform3d());
+        this(new Rotation3d(), new Translation3d());
     }
     /**
-     * The rotation-translation transformation that makes poses in the world relative to
-     * this pose.
-     * @param pose The new origin
+     * Creates a rotation-translation transformation from a Transform3d.
+     * 
+     * <p>Applying this transformation to poses will preserve their current origin-to-pose
+     * transform as if the origin was transformed by these components.
+     * 
+     * @param trf The origin transformation
      */
-    public RotTrlTransform3d(Pose3d pose) {
-        // rotate by change in origin rotation
-        var inverseRot = pose.getRotation().unaryMinus();
-        this.rot = inverseRot;
-        // orientation is now aligned, translate to match origins
-        this.trl = pose.getTranslation()
-            .rotateBy(inverseRot)
-            .unaryMinus();
-    }
     public RotTrlTransform3d(Transform3d trf) {
         this(trf.getRotation(), trf.getTranslation());
     }
+    /**
+     * A rotation-translation transformation.
+     * 
+     * <p>Applying this transformation to poses will preserve their current origin-to-pose
+     * transform as if the origin was transformed by these components.
+     * 
+     * @param rot The rotation component
+     * @param trl The translation component
+     */
     public RotTrlTransform3d(Rotation3d rot, Translation3d trl) {
         this.rot = rot;
         this.trl = trl;
     }
+    /**
+     * The rotation-translation transformation that makes poses in the world
+     * consider this pose as the new origin, or change the basis to this pose.
+     * 
+     * @param pose The new origin
+     */
+    public static RotTrlTransform3d makeRelativeTo(Pose3d pose) {
+        return new RotTrlTransform3d(pose.getRotation(), pose.getTranslation()).inverse();
+    }
     
+    /**
+     * The inverse of this transformation. Applying the inverse will "undo" this transformation.
+     */
+    public RotTrlTransform3d inverse() {
+        var inverseRot = rot.unaryMinus();
+        var inverseTrl = trl.rotateBy(inverseRot).unaryMinus();
+        return new RotTrlTransform3d(inverseRot, inverseTrl);
+    }
+    
+    /** This transformation as a Transform3d (as if of the origin) */
     public Transform3d getTransform() {return new Transform3d(trl, rot);}
+    /** The translation component of this transformation */
     public Translation3d getTranslation() {return trl;}
+    /** The rotation component of this transformation */
     public Rotation3d getRotation() {return rot;}
+
     public Translation3d apply(Translation3d trl) {
         return apply(new Pose3d(trl, new Rotation3d())).getTranslation();
     };

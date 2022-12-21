@@ -1,9 +1,10 @@
-package frc.robot.vision;
+package frc.robot.vision.estimation;
 
 import java.util.List;
 import java.util.Random;
 import java.util.stream.Collectors;
 
+import org.photonvision.targeting.PhotonTrackedTarget;
 import org.photonvision.targeting.TargetCorner;
 
 import edu.wpi.first.math.Matrix;
@@ -23,13 +24,12 @@ import edu.wpi.first.math.numbers.*;
      * <p>The camera intrinsics and distortion coefficients describe the results of calibration,
      * and how to map between 3d field points and 2d image points.
      * 
-     * <p>The performance values (frame/shutter speed, latency) determine how often results
-     * are updated and with how much latency. Low shutter speeds cause motion blur which
-     * can inhibit target detection while moving. Note that latency estimation does not
-     * account for network latency and the latency reported in the PhotonCamera's results
-     * will always be perfect.
+     * <p>The performance values (framerate/exposure time, latency) determine how often results
+     * should be updated and with how much latency in simulation. High exposure time causes motion
+     * blur which can inhibit target detection while moving. Note that latency estimation does not
+     * account for network latency and the latency reported will always be perfect.
      */
-    public class SimCamProperties {
+    public class CameraProperties {
         private final Random rand = new Random();
         // calibration
         private int resWidth;
@@ -40,16 +40,20 @@ import edu.wpi.first.math.numbers.*;
         private double errorStdDevPx;
         // performance
         private double frameSpeedMs = 0;
-        private double shutterSpeedMs = 0;
+        private double exposureTimeMs = 0;
         private double avgLatencyMs = 0;
         private double latencyStdDevMs = 0;
 
         /**
          * Default constructor which is the same as {@link #PERFECT_90DEG}
          */
-        public SimCamProperties(){
+        public CameraProperties(){
             setCalibration(960, 720, Rotation2d.fromDegrees(90));
         };
+
+        public void setRandomSeed(long seed) {
+            rand.setSeed(seed);
+        }
 
         public void setCalibration(int resWidth, int resHeight, Rotation2d fovDiag) {
             var fovWidth = new Rotation2d(
@@ -92,11 +96,11 @@ import edu.wpi.first.math.numbers.*;
             this.frameSpeedMs = 1000.0 / fps;
         }
         /**
-         * @param shutterSpeedMs The amount of time the shutter is open for one frame.
+         * @param exposureTimeMs The amount of time the "shutter" is open for one frame.
          *     Affects motion blur. <b>Frame speed(from FPS) is limited to this!</b>
          */
-        public void setShutterSpeedMs(double shutterSpeedMs) {
-            this.shutterSpeedMs = shutterSpeedMs;
+        public void setExposureTimeMs(double exposureTimeMs) {
+            this.exposureTimeMs = exposureTimeMs;
         }
         /**
          * @param avgLatencyMs The average latency (image capture -> data) in milliseconds
@@ -125,11 +129,46 @@ import edu.wpi.first.math.numbers.*;
         public Matrix<N3, N3> getIntrinsics() {
             return camIntrinsics.copy();
         }
-        public List<TargetCorner> undistort(List<TargetCorner> corners) {
-            return OpenCVHelp.undistortCorners(this, corners);
+
+        /**
+         * Undistorts a detected target's corner points, and returns a new PhotonTrackedTarget
+         * with updated corners, yaw, pitch, skew, and area. Best/alt pose and ambiguity are unchanged.
+         */
+        public PhotonTrackedTarget undistort2dTarget(PhotonTrackedTarget target) {
+            var undistortedCorners = undistort(target.getCorners());
+            // find the 2d yaw/pitch
+            var boundingCenterRot = getPixelRot(undistortedCorners);
+            // find contour area            
+            double areaPercent = getContourAreaPercent(undistortedCorners);
+
+            return new PhotonTrackedTarget(
+                Math.toDegrees(boundingCenterRot.getZ()),
+                -Math.toDegrees(boundingCenterRot.getY()),
+                areaPercent,
+                Math.toDegrees(boundingCenterRot.getX()),
+                target.getFiducialId(),
+                target.getBestCameraToTarget(),
+                target.getAlternateCameraToTarget(),
+                target.getPoseAmbiguity(),
+                undistortedCorners
+            );
         }
+        public List<TargetCorner> undistort(List<TargetCorner> points) {
+            return OpenCVHelp.undistortPoints(this, points);
+        }
+
+        /**
+         * The percentage(0 - 100) of this camera's resolution the contour takes up in pixels
+         * of the image.
+         * @param corners Corners of the contour
+         */
+        public double getContourAreaPercent(List<TargetCorner> corners) {
+            return OpenCVHelp.getContourAreaPx(corners) / getResArea() * 100;
+        }
+
         /**
          * The yaw from the principal point of this camera to the pixel x value.
+         * Positive values left.
          */
         public Rotation2d getPixelYaw(double pixelX) {
             double fx = camIntrinsics.get(0, 0);
@@ -143,8 +182,7 @@ import edu.wpi.first.math.numbers.*;
         }
         /**
          * The pitch from the principal point of this camera to the pixel y value.
-         * 
-         * <p><b>CLOCKWISE-POSITIVE!
+         * Pitch is positive down.
          */
         public Rotation2d getPixelPitch(double pixelY) {
             double fy = camIntrinsics.get(1, 1);
@@ -153,35 +191,28 @@ import edu.wpi.first.math.numbers.*;
             double yOffset = cy - pixelY;
             return new Rotation2d(
                 fy,
-                yOffset
+                -yOffset
             );
         }
         /**
-         * Finds the yaw and pitch to the center of the rectangle bounding the given
-         * target corners.
-         * 
-         * <p><b>PITCH IS CLOCKWISE-POSITIVE!
+         * Undistorts these image points, and then finds the yaw and pitch to the center
+         * of the rectangle bounding them. Yaw is positive left, and pitch is positive down.
          */
-        public Rotation3d getPixelRot(List<TargetCorner> corners) {
-            if(corners == null || corners.size() == 0) return new Rotation3d();
-            TargetCorner rectCenter;
-            if(corners.size() == 1) rectCenter = corners.get(0);
-            else if(corners.size() == 2) rectCenter = new TargetCorner(
-                        (corners.get(0).x+corners.get(1).x)/2.0,
-                        (corners.get(0).y+corners.get(1).y)/2.0
-                    );
-            else {
-                var boundingRect = OpenCVHelp.getBoundingRect(corners);
-                rectCenter = new TargetCorner(
-                    boundingRect.x + boundingRect.width/2.0,
-                    boundingRect.y + boundingRect.height/2.0
-                );
-            }
-            
+        public Rotation3d getUndistortedPixelRot(List<TargetCorner> points) {
+            return getPixelRot(undistort(points));
+        }
+        /**
+         * Finds the yaw and pitch to the center of the rectangle bounding the given
+         * image points. Yaw is positive left, and pitch is positive down.
+         */
+        public Rotation3d getPixelRot(List<TargetCorner> points) {
+            if(points == null || points.size() == 0) return new Rotation3d();
+
+            var rect = OpenCVHelp.getMinAreaRect(points);
             return new Rotation3d(
-                0,
-                getPixelPitch(rectCenter.y).getRadians(),
-                getPixelYaw(rectCenter.x).getRadians()
+                rect.angle,
+                getPixelPitch(rect.center.y).getRadians(),
+                getPixelYaw(rect.center.x).getRadians()
             );
         }
         public Rotation2d getHorizFOV() {
@@ -194,7 +225,7 @@ import edu.wpi.first.math.numbers.*;
             // sum of FOV above and below principal point
             var above = getPixelPitch(0);
             var below = getPixelPitch(resHeight);
-            return above.minus(below);
+            return below.minus(above);
         }
         public Rotation2d getDiagFOV() {
             return new Rotation2d(Math.hypot(getHorizFOV().getRadians(), getVertFOV().getRadians()));
@@ -208,18 +239,19 @@ import edu.wpi.first.math.numbers.*;
          * This means the camera's aspect ratio and resolution will be used, and the
          * points' x and y may not reach all portions(e.g. a wide aspect ratio means
          * some of the top and bottom of the square image is unreachable).
-         * @param corners Pixel points on this camera's image
+         * 
+         * @param points Pixel points on this camera's image
          * @return Points mapped to an image of 1x1 resolution
          */
-        public List<TargetCorner> getPixelFraction(List<TargetCorner> corners) {
+        public List<TargetCorner> getPixelFraction(List<TargetCorner> points) {
             double resLarge = getAspectRatio() > 1 ? resWidth : resHeight;
 
-            return corners.stream()
-                .map(c -> {
+            return points.stream()
+                .map(p -> {
                     // offset to account for aspect ratio
                     return new TargetCorner(
-                        (c.x + (resLarge-resWidth)/2.0) / resLarge,
-                        (c.y + (resLarge-resHeight)/2.0) / resLarge
+                        (p.x + (resLarge-resWidth)/2.0) / resLarge,
+                        (p.y + (resLarge-resHeight)/2.0) / resLarge
                     );
                 })
                 .collect(Collectors.toList());
@@ -234,8 +266,8 @@ import edu.wpi.first.math.numbers.*;
         public double getFrameSpeedMs() {
             return frameSpeedMs;
         }
-        public double getShutterSpeedMs() {
-            return shutterSpeedMs;
+        public double getExposureTimeMs() {
+            return exposureTimeMs;
         }
         public double getAvgLatencyMs() {
             return avgLatencyMs;
@@ -245,19 +277,19 @@ import edu.wpi.first.math.numbers.*;
         }
 
         /**
-         * @return Estimate of new target corners based on this camera's noise.
+         * @return Estimate of new points based on this camera's noise.
          */
-        public List<TargetCorner> estPixelNoise(List<TargetCorner> corners) {
-            if(avgErrorPx == 0 && errorStdDevPx == 0) return corners;
+        public List<TargetCorner> estPixelNoise(List<TargetCorner> points) {
+            if(avgErrorPx == 0 && errorStdDevPx == 0) return points;
 
-            return corners.stream()
-                .map(c -> {
+            return points.stream()
+                .map(p -> {
                     // error pixels in random direction
                     double error = rand.nextGaussian(avgErrorPx, errorStdDevPx);
                     double errorAngle = rand.nextDouble(-Math.PI, Math.PI);
                     return new TargetCorner(
-                        c.x + error*Math.cos(errorAngle),
-                        c.y + error*Math.sin(errorAngle)
+                        p.x + error*Math.cos(errorAngle),
+                        p.y + error*Math.sin(errorAngle)
                     );
                 })
                 .collect(Collectors.toList());
@@ -280,8 +312,8 @@ import edu.wpi.first.math.numbers.*;
         // pre-calibrated example cameras
 
         /** 960x720 resolution, 90 degree FOV, "perfect" lagless camera */
-        public static final SimCamProperties PERFECT_90DEG = new SimCamProperties();
-        public static final SimCamProperties PI4_PICAM2_480p = new SimCamProperties();
+        public static final CameraProperties PERFECT_90DEG = new CameraProperties();
+        public static final CameraProperties PI4_PICAM2_480p = new CameraProperties();
         static {
             PI4_PICAM2_480p.setCalibration(640, 480,
                 Matrix.mat(Nat.N3(), Nat.N3()).fill( // intrinsic

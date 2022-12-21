@@ -1,14 +1,17 @@
-package frc.robot.vision;
+package frc.robot.vision.estimation;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.photonvision.targeting.PhotonTrackedTarget;
 import org.photonvision.targeting.TargetCorner;
 
 import edu.wpi.first.apriltag.AprilTag;
+import edu.wpi.first.apriltag.AprilTagFieldLayout;
 import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.geometry.Pose3d;
+import edu.wpi.first.math.geometry.Rotation2d;
 import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation3d;
@@ -16,6 +19,7 @@ import edu.wpi.first.math.numbers.N3;
 import edu.wpi.first.math.util.Units;
 import frc.robot.util.MathUtils;
 import frc.robot.util.RotTrlTransform3d;
+import frc.robot.vision.util.PhotonUtils;
 
 public class VisionEstimation {
 
@@ -23,6 +27,38 @@ public class VisionEstimation {
         Units.inchesToMeters(6),
         Units.inchesToMeters(6)
     );
+
+    /**
+     * Uses trigonometry and the known height of the AprilTags on the field to estimate the
+     * translations of the detected AprilTags relative to the robot. The returned poses of
+     * the AprilTags will have zero rotation.
+     * 
+     * @param detectedTags The detected tag in the camera-- specifically, its fiducial ID,
+     *     yaw, and pitch. Pitch is assumed to be positive up.
+     * @return The estimated AprilTags with ID and pose(without rotation) corresponding to the 2d
+     *     detected tags from the camera, relative to the robot.
+     */
+    public static List<AprilTag> estimateTagsTrig(
+            Transform3d robotToCamera, List<PhotonTrackedTarget> detectedTags, AprilTagFieldLayout knownTags) {
+        var tags = detectedTags.stream().map(t -> {
+            var knownTagPose = knownTags.getTagPose(t.getFiducialId());
+            if(knownTagPose.isEmpty()) return null;
+            var camToTagTrl = PhotonUtils.estimateCamToTargetTrl(
+                robotToCamera,
+                knownTagPose.get().getZ(),
+                Rotation2d.fromDegrees(t.getYaw()), Rotation2d.fromDegrees(-t.getPitch())
+            );
+
+            return new AprilTag(
+                t.getFiducialId(),
+                new Pose3d(camToTagTrl, new Rotation3d()).relativeTo(
+                    new Pose3d().plus(robotToCamera.inverse())
+                )
+            );  
+        }).filter(t -> t != null).collect(Collectors.toList());
+        
+        return tags;
+    }
 
     /**
      * Performs solvePNP using 3d-2d point correspondences to estimate the field-to-camera transformation.
@@ -35,8 +71,8 @@ public class VisionEstimation {
      * @param knownTags The known tag field poses corresponding to the visible tag IDs
      * @return The transformation that maps the field origin to the camera pose
      */
-    public static PNPResults estimateTagsPNP(
-            SimCamProperties prop, List<TargetCorner> corners, List<AprilTag> knownTags) {
+    public static PNPResults estimateCamPosePNP(
+            CameraProperties prop, List<TargetCorner> corners, List<AprilTag> knownTags) {
         if(knownTags == null || corners == null ||
                 corners.size() != knownTags.size()*4 || knownTags.size() == 0) {
             return new PNPResults();
@@ -59,6 +95,7 @@ public class VisionEstimation {
             var objectTrls = new ArrayList<Translation3d>();
             for(var tag : knownTags) objectTrls.addAll(tagModel.getFieldCorners(tag.pose));
             var camToOrigin = OpenCVHelp.solveTagsPNP(prop, objectTrls, corners);
+            // var camToOrigin = OpenCVHelp.solveTagsPNPRansac(prop, objectTrls, corners);
             return new PNPResults(
                 camToOrigin.best.inverse(),
                 camToOrigin.alt.inverse(),
@@ -85,7 +122,7 @@ public class VisionEstimation {
      *     RMSE of this is -1, no solution could be found.
      * @see #estimateRigidTransform(List, List)
      */
-    public static SVDResults estimateTagsLS(
+    public static SVDResults estimateTransformLS(
             List<AprilTag> measuredTags, List<AprilTag> knownTags, boolean useCorners) {
         if(measuredTags == null || knownTags == null ||
                 measuredTags.size() < 1 || measuredTags.size() != knownTags.size()) {
@@ -109,8 +146,8 @@ public class VisionEstimation {
             knownTrls.add(kTrl.plus(up));
         }
         
-        return new SVDResults(OpenCVHelp.estimateRigidTransform(measuredTrls, knownTrls), 0);
-        // return estimateRigidTransform(measuredTrls, knownTrls);
+        // return new SVDResults(OpenCVHelp.estimateRigidTransform(measuredTrls, knownTrls), 0);
+        return estimateRigidTransform(measuredTrls, knownTrls);
     }
     /**
      * Finds the rigid transform that best maps the list of translations A onto the list of
@@ -218,6 +255,7 @@ public class VisionEstimation {
         /** If no alternate solution is found, this is 0 */
         public final double ambiguity;
         public final double bestReprojErr;
+        /** If no alternate solution is found, this is 0 */
         public final double altReprojErr;
 
         public PNPResults() {
@@ -239,7 +277,7 @@ public class VisionEstimation {
      */
     public static class SVDResults {
         public final RotTrlTransform3d trf;
-        /** If this result is invalid, this value is -1 */
+        /** If the result is invalid, this value is -1 */
         public final double rmse;
 
         public SVDResults() {

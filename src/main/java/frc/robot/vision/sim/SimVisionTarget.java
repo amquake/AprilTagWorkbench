@@ -22,12 +22,13 @@
  * SOFTWARE.
  */
 
-package frc.robot.vision;
+package frc.robot.vision.sim;
 
 import java.util.List;
 
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Translation3d;
+import frc.robot.vision.estimation.TargetModel;
 
 public class SimVisionTarget {
 

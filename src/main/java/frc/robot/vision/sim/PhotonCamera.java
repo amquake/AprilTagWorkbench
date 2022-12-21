@@ -22,7 +22,7 @@
  * SOFTWARE.
  */
 
-package frc.robot.vision;
+package frc.robot.vision.sim;
 
 import edu.wpi.first.networktables.NetworkTable;
 import edu.wpi.first.networktables.NetworkTableEntry;

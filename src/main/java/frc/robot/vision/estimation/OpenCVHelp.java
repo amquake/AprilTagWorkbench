@@ -1,4 +1,4 @@
-package frc.robot.vision;
+package frc.robot.vision.estimation;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -15,7 +15,7 @@ import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.MatOfPoint3f;
 import org.opencv.core.Point;
 import org.opencv.core.Point3;
-import org.opencv.core.Rect;
+import org.opencv.core.RotatedRect;
 import org.opencv.imgproc.Imgproc;
 import org.photonvision.targeting.TargetCorner;
 
@@ -31,7 +31,7 @@ import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.numbers.*;
 import frc.robot.util.RotTrlTransform3d;
-import frc.robot.vision.VisionEstimation.PNPResults;
+import frc.robot.vision.estimation.VisionEstimation.PNPResults;
 
 public final class OpenCVHelp {
 
@@ -214,11 +214,12 @@ public final class OpenCVHelp {
      * @return The 2d points in pixels which correspond to the image of the 3d points on the camera
      */
     public static List<TargetCorner> projectPoints(
-            Pose3d camPose, SimCamProperties camProp,
+            Pose3d camPose, CameraProperties camProp,
             List<Translation3d> objectTranslations) {
         // translate to opencv classes
         var objectPoints = translationToTvec(objectTranslations.toArray(new Translation3d[0]));
-        var basisChange = new RotTrlTransform3d(camPose);
+        // opencv rvec/tvec describe a change in basis from world to camera
+        var basisChange = RotTrlTransform3d.makeRelativeTo(camPose);
         var rvec = rotationToRvec(basisChange.getRotation());
         var tvec = translationToTvec(basisChange.getTranslation());
         var cameraMatrix = matrixToMat(camProp.getIntrinsics().getStorage());
@@ -244,14 +245,14 @@ public final class OpenCVHelp {
     /**
      * Undistort 2d image points using a given camera's intrinsics and distortion.
      * 
-     * <p>2d image points from {@link #projectPoints(Pose3d, SimCamProperties, Translation3d...)}
+     * <p>2d image points from {@link #projectPoints(Pose3d, CameraProperties, Translation3d...)}
      * will naturally be distorted, so this operation is important if the image points
      * need to be directly used (e.g. 2d yaw/pitch).
      * @param camProp The properties of this camera
      * @param corners The distorted image points
      * @return The undistorted image points
      */
-    public static List<TargetCorner> undistortCorners(SimCamProperties camProp, List<TargetCorner> corners) {
+    public static List<TargetCorner> undistortPoints(CameraProperties camProp, List<TargetCorner> corners) {
         var points_in = targetCornersToMat(corners.toArray(new TargetCorner[0]));
         var points_out = new MatOfPoint2f();
         var cameraMatrix = matrixToMat(camProp.getIntrinsics().getStorage());
@@ -269,15 +270,15 @@ public final class OpenCVHelp {
     }
 
     /**
-     * Get the rectangle which bounds this contour. This is useful for finding the center of a bounded
+     * Get the rectangle with minimum area which bounds this contour. This is useful for finding the center of a bounded
      * contour or the size of the bounding box.
      * 
      * @param corners The corners defining this contour
      * @return Rectangle bounding the contour created by the given corners
      */
-    public static Rect getBoundingRect(List<TargetCorner> corners) {
+    public static RotatedRect getMinAreaRect(List<TargetCorner> corners) {
         var corn = targetCornersToMat(corners.toArray(new TargetCorner[0]));
-        var rect = Imgproc.boundingRect(corn);
+        var rect = Imgproc.minAreaRect(corn);
         corn.release();
         return rect;
     }
@@ -321,12 +322,12 @@ public final class OpenCVHelp {
      * 
      * @param camProp The properties of this camera
      * @param modelTrls The translations of the object corners. These should have the object
-     *     pose as their origin. These must come in a specific order (in NWU):
+     *     pose as their origin. These must come in a specific, pose-relative order (in NWU):
      *     <ul>
      *     <li> Point 0: [0, -squareLength / 2,  squareLength / 2]
-     *     <li> Point 0: [0,  squareLength / 2,  squareLength / 2]
-     *     <li> Point 0: [0,  squareLength / 2, -squareLength / 2]
-     *     <li> Point 0: [0, -squareLength / 2, -squareLength / 2]
+     *     <li> Point 1: [0,  squareLength / 2,  squareLength / 2]
+     *     <li> Point 2: [0,  squareLength / 2, -squareLength / 2]
+     *     <li> Point 3: [0, -squareLength / 2, -squareLength / 2]
      *     </ul>
      * @param imageCorners The projection of these 3d object points into the 2d camera image.
      *     The order should match the given object point translations.
@@ -334,7 +335,7 @@ public final class OpenCVHelp {
      *     and the ambiguity if alternate solutions are also available.
      */
     public static PNPResults solveTagPNP(
-            SimCamProperties camProp, List<Translation3d> modelTrls, List<TargetCorner> imageCorners) {
+            CameraProperties camProp, List<Translation3d> modelTrls, List<TargetCorner> imageCorners) {
         // IPPE_SQUARE expects our corners in a specific order
         modelTrls = reorderCircular(modelTrls, false, 2);
         imageCorners = reorderCircular(imageCorners, false, 2);
@@ -403,7 +404,7 @@ public final class OpenCVHelp {
      *     and the ambiguity if alternate solutions are also available.
      */
     public static PNPResults solveTagsPNP(
-            SimCamProperties camProp, List<Translation3d> objectTrls, List<TargetCorner> imageCorners) {
+            CameraProperties camProp, List<Translation3d> objectTrls, List<TargetCorner> imageCorners) {
         // translate to opencv classes
         var objectPoints = translationToTvec(objectTrls.toArray(new Translation3d[0]));
         var imagePoints = targetCornersToMat(imageCorners.toArray(new TargetCorner[0]));
@@ -443,6 +444,44 @@ public final class OpenCVHelp {
         tvec.release();
         reprojectionError.release();
         return new PNPResults(best, alt, 0, errors[0], 0);
+    }
+    public static PNPResults solveTagsPNPRansac(
+            CameraProperties camProp, List<Translation3d> objectTrls, List<TargetCorner> imageCorners) {
+        // translate to opencv classes
+        var objectPoints = translationToTvec(objectTrls.toArray(new Translation3d[0]));
+        var imagePoints = targetCornersToMat(imageCorners.toArray(new TargetCorner[0]));
+        var cameraMatrix = matrixToMat(camProp.getIntrinsics().getStorage());
+        var distCoeffs = matrixToMat(camProp.getDistCoeffs().getStorage());
+        var rvec = Mat.zeros(3, 1, CvType.CV_32F);
+        var tvec = Mat.zeros(3, 1, CvType.CV_32F);
+        var inliers = new Mat();
+        // calc rvec/tvec from image points
+        Calib3d.solvePnPRansac(
+            objectPoints, imagePoints,
+            cameraMatrix, distCoeffs,
+            rvec, tvec,
+            false, 10000,
+            1f, 0.99, inliers,
+            Calib3d.USAC_MAGSAC
+        );
+        // System.out.println("--Inliers:");
+        // System.out.println(inliers.dump());
+
+        var best = new Transform3d(
+            tvecToTranslation(tvec),
+            rvecToRotation(rvec)
+        );
+        var alt = new Transform3d();
+        
+        // release our Mats from native memory
+        objectPoints.release();
+        imagePoints.release();
+        cameraMatrix.release();
+        distCoeffs.release();
+        rvec.release();
+        tvec.release();
+        inliers.release();
+        return new PNPResults(best, alt, 0, 0, 0);
     }
 
     public static RotTrlTransform3d estimateRigidTransform(
