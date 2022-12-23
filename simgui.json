@@ -4,11 +4,9 @@
       "/FMSInfo": "FMSInfo",
       "/SmartDashboard/Auto Options": "String Chooser",
       "/SmartDashboard/Field": "Field2d",
-      "/SmartDashboard/picam Sim Field": "Field2d",
-      "/SmartDashboard/vision sim corners": "Field2d",
       "/SmartDashboard/vision-main/Sim Field": "Field2d",
-      "/SmartDashboard/vision-main/back-cam corners": "Field2d",
-      "/SmartDashboard/vision-main/front-cam corners": "Field2d"
+      "/SmartDashboard/vision-main/back/Sim Corners": "Field2d",
+      "/SmartDashboard/vision-main/front/Sim Corners": "Field2d"
     },
     "windows": {
       "/SmartDashboard/Auto Options": {
@@ -179,7 +177,7 @@
           "visible": true
         }
       },
-      "/SmartDashboard/vision-main/back-cam corners": {
+      "/SmartDashboard/vision-main/back/Sim Corners": {
         "Robot": {
           "arrows": false,
           "length": 0.0,
@@ -216,7 +214,7 @@
           "visible": true
         }
       },
-      "/SmartDashboard/vision-main/front-cam corners": {
+      "/SmartDashboard/vision-main/front/Sim Corners": {
         "Robot": {
           "arrows": false,
           "length": 0.0,
@@ -261,23 +259,6 @@
     },
     "Retained Values": {
       "open": false
-    },
-    "transitory": {
-      "SmartDashboard": {
-        "Field": {
-          "open": true
-        },
-        "open": true,
-        "vision sim corners": {
-          "open": true
-        }
-      },
-      "photonvision": {
-        "open": true,
-        "picam": {
-          "open": true
-        }
-      }
     }
   }
 }

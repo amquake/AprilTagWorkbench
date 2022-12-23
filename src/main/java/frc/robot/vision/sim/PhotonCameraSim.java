@@ -41,10 +41,10 @@ import edu.wpi.first.networktables.NetworkTableInstance;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import frc.robot.util.CameraTargetRelation;
 import frc.robot.vision.estimation.CameraProperties;
 import frc.robot.vision.estimation.OpenCVHelp;
 import frc.robot.vision.estimation.VisionEstimation;
+import frc.robot.vision.util.CameraTargetRelation;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -271,9 +271,6 @@ public class PhotonCameraSim {
     }
     public void clearCameraPoses() {
         camPoseBuffer.clear();
-    }
-    public void logDebugCorners(String table) {
-        SmartDashboard.putData(table+"/"+cam.name+"-cam corners", dbgCorners);
     }
 
     public List<PhotonTrackedTarget> process(

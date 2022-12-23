@@ -34,6 +34,7 @@ import edu.wpi.first.math.util.Units;
 import edu.wpi.first.wpilibj.Timer;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+import frc.robot.util.LogUtil;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -95,7 +96,10 @@ public class SimVisionSystem {
     public void addCamera(PhotonCameraSim cameraSim, Transform3d robotToCamera) {
         var existing = camSimMap.putIfAbsent(cameraSim.getCamera().name, cameraSim);
         if(existing == null) {
-            cameraSim.logDebugCorners(tableName);
+            SmartDashboard.putData(
+                tableName+"/"+cameraSim.getCamera().name+"/Sim Corners",
+                cameraSim.getDebugCorners()
+            );
         }
         camTrfMap.put(cameraSim, robotToCamera);
     }
@@ -246,13 +250,17 @@ public class SimVisionSystem {
         double now = Timer.getFPGATimestamp();
         robotPoseBuffer.addSample(now, robotPoseMeters);
         dbgField.setRobotPose(robotPoseMeters.toPose2d());
+        SmartDashboard.putNumberArray(
+            tableName+"/RobotPose3d",
+            LogUtil.toPoseArray3d(robotPoseMeters)
+        );
 
         var allTargets = new ArrayList<SimVisionTarget>();
         targetTypes.forEach((entry) -> allTargets.addAll(entry.getValue()));
-        var visibleTargets = new ArrayList<Pose2d>();
+        var visibleTargets = new ArrayList<Pose3d>();
         var cameraPose2ds = new ArrayList<Pose2d>();
         // process each camera
-        for(var camSim : camSimMap.values()) {
+        for(var camSim : camSimMap.values()) {            
             // check if this camera is ready to process and get latency
             var optionalLatency = camSim.getShouldProcess();
             if(optionalLatency.isEmpty()) continue;
@@ -260,19 +268,28 @@ public class SimVisionSystem {
             // save "real" camera poses over time
             camSim.updateCameraPose(robotPoseMeters.transformBy(getRobotToCamera(camSim)));
             // display camera latency milliseconds ago
-            Pose3d cameraPose = camSim.getCameraPose(latencyMillis / 1000.0);
-            cameraPose2ds.add(cameraPose.toPose2d());
+            Pose3d lateCameraPose = camSim.getCameraPose(latencyMillis / 1000.0);
+            cameraPose2ds.add(lateCameraPose.toPose2d());
+            SmartDashboard.putNumberArray(
+                tableName+"/"+camSim.getCamera().name+"/LatePose3d",
+                LogUtil.toPoseArray3d(lateCameraPose)
+            );
 
             // update camera's visible targets
-            var trackedTargets = camSim.process(latencyMillis, cameraPose, allTargets);
+            var trackedTargets = camSim.process(latencyMillis, lateCameraPose, allTargets);
             // display results
             for(var target : trackedTargets) {
                 visibleTargets.add(
-                    cameraPose.transformBy(target.getBestCameraToTarget()).toPose2d()
+                    lateCameraPose.transformBy(target.getBestCameraToTarget())
                 );
             }
         }
-        if(visibleTargets.size() != 0) dbgField.getObject("visibleTargets").setPoses(visibleTargets);
+        if(visibleTargets.size() != 0) {
+            SmartDashboard.putNumberArray(tableName+"/EstTargetPoses3d", LogUtil.toPoseArray3d(visibleTargets));
+            dbgField.getObject("visibleTargets").setPoses(
+                visibleTargets.stream().map(p -> p.toPose2d()).collect(Collectors.toList())
+            );
+        }
         if(cameraPose2ds.size() != 0) dbgField.getObject("cameras").setPoses(cameraPose2ds);
     }
 }

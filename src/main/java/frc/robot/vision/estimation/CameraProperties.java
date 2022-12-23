@@ -35,7 +35,7 @@ import edu.wpi.first.math.numbers.*;
         private int resWidth;
         private int resHeight;
         private Matrix<N3, N3> camIntrinsics;
-        private Vector<N5> distCoeffs;
+        private Matrix<N5, N1> distCoeffs;
         private double avgErrorPx;
         private double errorStdDevPx;
         // performance
@@ -79,10 +79,16 @@ import edu.wpi.first.math.numbers.*;
             setCalibration(resWidth, resHeight, camIntrinsics, distCoeff);
         }
         public void setCalibration(int resWidth, int resHeight,
-                Matrix<N3, N3> camIntrinsics, Vector<N5> distCoeffs) {
+                Matrix<N3, N3> camIntrinsics, Matrix<N5, N1> distCoeffs) {
             this.resWidth = resWidth;
             this.resHeight = resHeight;
             this.camIntrinsics = camIntrinsics;
+            this.distCoeffs = distCoeffs;
+        }
+        public void setCameraIntrinsics(Matrix<N3, N3> camIntrinsics) {
+            this.camIntrinsics = camIntrinsics;
+        }
+        public void setDistortionCoeffs(Matrix<N5, N1> distCoeffs) {
             this.distCoeffs = distCoeffs;
         }
         public void setCalibError(double avgErrorPx, double errorStdDevPx) {
@@ -125,9 +131,38 @@ import edu.wpi.first.math.numbers.*;
         public int getResArea() {
             return resWidth*resHeight;
         }
-        
         public Matrix<N3, N3> getIntrinsics() {
             return camIntrinsics.copy();
+        }
+        public Vector<N5> getDistCoeffs() {
+            return new Vector<>(distCoeffs);
+        }
+
+        public double getFPS() {
+            return 1000.0 / frameSpeedMs;
+        }
+        public double getFrameSpeedMs() {
+            return frameSpeedMs;
+        }
+        public double getExposureTimeMs() {
+            return exposureTimeMs;
+        }
+        public double getAvgLatencyMs() {
+            return avgLatencyMs;
+        }
+        public double getLatencyStdDevMs() {
+            return latencyStdDevMs;
+        }
+
+        public CameraProperties copy() {
+            var newProp = new CameraProperties();
+            newProp.setCalibration(resWidth, resHeight, camIntrinsics, distCoeffs);
+            newProp.setCalibError(avgErrorPx, errorStdDevPx);
+            newProp.setFPS(getFPS());
+            newProp.setExposureTimeMs(exposureTimeMs);
+            newProp.setAvgLatencyMs(avgLatencyMs);
+            newProp.setLatencyStdDevMs(latencyStdDevMs);
+            return new CameraProperties();
         }
 
         /**
@@ -255,25 +290,6 @@ import edu.wpi.first.math.numbers.*;
                     );
                 })
                 .collect(Collectors.toList());
-        }
-        public Vector<N5> getDistCoeffs() {
-            return new Vector<>(distCoeffs);
-        }
-
-        public double getFPS() {
-            return 1000.0 / frameSpeedMs;
-        }
-        public double getFrameSpeedMs() {
-            return frameSpeedMs;
-        }
-        public double getExposureTimeMs() {
-            return exposureTimeMs;
-        }
-        public double getAvgLatencyMs() {
-            return avgLatencyMs;
-        }
-        public double getLatencyStdDevMs() {
-            return latencyStdDevMs;
         }
 
         /**

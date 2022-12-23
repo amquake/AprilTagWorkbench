@@ -11,10 +11,10 @@ import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.util.Units;
-import frc.robot.util.CameraTargetRelation;
 import frc.robot.vision.estimation.CameraProperties;
 import frc.robot.vision.estimation.OpenCVHelp;
 import frc.robot.vision.sim.SimVisionTarget;
+import frc.robot.vision.util.CameraTargetRelation;
 
 public class OpenCVTest {
     private static final double kTrlDelta = 0.005;
@@ -70,7 +70,7 @@ public class OpenCVTest {
         var targetCorners = OpenCVHelp.projectPoints(
             cameraPose,
             prop,
-            target.getModel().getFieldCorners(target.getPose())
+            target.getPlanarFieldCorners()
         );
         // find circulation (counter/clockwise-ness)
         double circulation = 0;
@@ -87,7 +87,7 @@ public class OpenCVTest {
         targetCorners = OpenCVHelp.projectPoints(
             cameraPose,
             prop,
-            target.getModel().getFieldCorners(target.getPose())
+            target.getPlanarFieldCorners()
         );
         var boundingCenterRot2 = prop.getPixelRot(targetCorners);
         var yaw2d = new Rotation2d(boundingCenterRot2.getZ());
@@ -122,7 +122,7 @@ public class OpenCVTest {
         var targetCorners = OpenCVHelp.projectPoints(
             cameraPose,
             prop,
-            target.getModel().getFieldCorners(target.getPose())
+            target.getPlanarFieldCorners()
         );
         var pnpSim = OpenCVHelp.solveTagPNP(prop, target.getModel().cornerOffsets, targetCorners);
         var estRelation = new CameraTargetRelation(

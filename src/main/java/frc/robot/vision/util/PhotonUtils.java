@@ -81,12 +81,12 @@ public final class PhotonUtils {
      * target relative to the camera, and the target relative to the field. This only tracks the
      * position of the camera, not the position of the robot itself.
      *
-     * @param fieldTarget The position of the target in the field.
+     * @param fieldToTarget The position of the target in the field.
      * @param cameraToTarget The transform from the camera to the target.
      * @return The position of the camera in the field.
      */
-    public static Pose3d estimateFieldToCamera(Pose3d fieldTarget, Transform3d cameraToTarget) {
-        return fieldTarget.transformBy(cameraToTarget.inverse());
+    public static Pose3d estimateFieldToCamera(Pose3d fieldToTarget, Transform3d cameraToTarget) {
+        return fieldToTarget.transformBy(cameraToTarget.inverse());
     }
 
     /**

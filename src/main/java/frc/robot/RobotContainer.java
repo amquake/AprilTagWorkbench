@@ -1,6 +1,7 @@
 package frc.robot;
 
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
 import static edu.wpi.first.wpilibj2.command.Commands.*;
 
@@ -28,6 +29,7 @@ import edu.wpi.first.wpilibj2.command.RunCommand;
 import frc.robot.auto.AutoOptions;
 import frc.robot.common.OCXboxController;
 import frc.robot.subsystems.drivetrain.SwerveDrive;
+import frc.robot.util.LogUtil;
 import frc.robot.vision.estimation.CameraProperties;
 import frc.robot.vision.estimation.VisionEstimation;
 import frc.robot.vision.sim.PhotonCamera;
@@ -145,15 +147,28 @@ public class RobotContainer {
         controller.rightBumper()
             .onTrue(runOnce(()->controller.setDriveSpeed(OCXboxController.kSpeedMax)))
             .onFalse(runOnce(()->controller.setDriveSpeed(OCXboxController.kSpeedDefault)));
+        
+        controller.x()
+            .whileTrue(run(()->{
+                var cameraSim = visionSim.getCameraSim(camera1.name);
+                var dist = cameraSim.prop.getDistCoeffs();
+                cameraSim.prop.setDistortionCoeffs(dist.plus(0.001));
+            }));
+        controller.b()
+            .whileTrue(run(()->{
+                var cameraSim = visionSim.getCameraSim(camera1.name);
+                var dist = cameraSim.prop.getDistCoeffs();
+                cameraSim.prop.setDistortionCoeffs(dist.plus(-0.001));
+            }));
 
         controller.y()
-        .whileTrue(run(()->{
-            var cameraSim = visionSim.getCameraSim(camera1.name);
-            visionSim.adjustCamera(cameraSim,
-                new Transform3d(new Translation3d(), new Rotation3d(0, -0.01, 0))
-                        .plus(visionSim.getRobotToCamera(cameraSim))
-            );
-        }));
+            .whileTrue(run(()->{
+                var cameraSim = visionSim.getCameraSim(camera1.name);
+                visionSim.adjustCamera(cameraSim,
+                    new Transform3d(new Translation3d(), new Rotation3d(0, -0.01, 0))
+                            .plus(visionSim.getRobotToCamera(cameraSim))
+                );
+            }));
         controller.a()
             .whileTrue(run(()->{
                 var cameraSim = visionSim.getCameraSim(camera1.name);
@@ -288,6 +303,10 @@ public class RobotContainer {
             );
             var estRobotPose = estTrf.trf.apply(new Pose3d());
             testPoses.add(estRobotPose.toPose2d());
+            SmartDashboard.putNumberArray(
+                "EstRobotPose3d",
+                LogUtil.toPoseArray3d(estRobotPose)
+            );
         }
         if(updated) {
             field.getObject("bestPoses").setPoses(bestPoses);
