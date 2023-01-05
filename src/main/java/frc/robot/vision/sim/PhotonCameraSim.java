@@ -24,42 +24,42 @@
 
 package frc.robot.vision.sim;
 
-import edu.wpi.first.math.MatBuilder;
-import edu.wpi.first.math.MathUtil;
-import edu.wpi.first.math.Matrix;
-import edu.wpi.first.math.Nat;
-import edu.wpi.first.math.StateSpaceUtil;
-import edu.wpi.first.math.VecBuilder;
-import edu.wpi.first.math.geometry.Pose2d;
-import edu.wpi.first.math.geometry.Pose3d;
-import edu.wpi.first.math.geometry.Rotation2d;
-import edu.wpi.first.math.geometry.Transform3d;
-import edu.wpi.first.math.interpolation.TimeInterpolatableBuffer;
-import edu.wpi.first.math.numbers.*;
-import edu.wpi.first.networktables.NetworkTableEntry;
-import edu.wpi.first.networktables.NetworkTableInstance;
-import edu.wpi.first.wpilibj.Timer;
-import edu.wpi.first.wpilibj.smartdashboard.Field2d;
-import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
-import frc.robot.vision.estimation.CameraProperties;
-import frc.robot.vision.estimation.OpenCVHelp;
-import frc.robot.vision.estimation.VisionEstimation;
-import frc.robot.vision.util.CameraTargetRelation;
-
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
-import org.ejml.simple.SimpleMatrix;
+import org.opencv.core.CvType;
+import org.opencv.core.Mat;
+import org.opencv.core.Size;
+import org.opencv.imgproc.Imgproc;
 import org.photonvision.PhotonTargetSortMode;
 import org.photonvision.PhotonVersion;
 import org.photonvision.common.dataflow.structures.Packet;
 import org.photonvision.targeting.PhotonPipelineResult;
 import org.photonvision.targeting.PhotonTrackedTarget;
 import org.photonvision.targeting.TargetCorner;
+
+import edu.wpi.first.cameraserver.CameraServer;
+import edu.wpi.first.cscore.CameraServerCvJNI;
+import edu.wpi.first.cscore.CvSource;
+import edu.wpi.first.cscore.VideoMode.PixelFormat;
+import edu.wpi.first.cscore.VideoSource.ConnectionStrategy;
+import edu.wpi.first.math.MathUtil;
+import edu.wpi.first.math.Pair;
+import edu.wpi.first.math.geometry.Pose2d;
+import edu.wpi.first.math.geometry.Pose3d;
+import edu.wpi.first.math.geometry.Rotation2d;
+import edu.wpi.first.math.interpolation.TimeInterpolatableBuffer;
+import edu.wpi.first.networktables.NetworkTableEntry;
+import edu.wpi.first.wpilibj.Timer;
+import edu.wpi.first.wpilibj.smartdashboard.Field2d;
+import frc.robot.vision.estimation.CameraProperties;
+import frc.robot.vision.estimation.OpenCVHelp;
+import frc.robot.vision.estimation.VisionEstimation;
+import frc.robot.vision.util.CameraTargetRelation;
+import frc.robot.vision.util.VideoSimUtil;
 
 @SuppressWarnings("unused")
 public class PhotonCameraSim {
@@ -83,10 +83,27 @@ public class PhotonCameraSim {
     private double maxSightRangeMeters = Double.MAX_VALUE;
     private static final double kDefaultMinAreaPx = 100;
     private double minTargetAreaPercent;
+    private PhotonTargetSortMode sortMode = PhotonTargetSortMode.Largest;
 
     private final TimeInterpolatableBuffer<Pose3d> camPoseBuffer = TimeInterpolatableBuffer.createBuffer(1.5);
 
     private final Field2d dbgCorners = new Field2d();
+    
+    // video stream simulation
+    private final CvSource videoSimRaw;
+    private final Mat videoSimFrameRaw = new Mat();
+    private boolean videoSimRawEnabled = true;
+    private final CvSource videoSimProcessed;
+    private final Mat videoSimFrameProcessed = new Mat();
+    private boolean videoSimProcEnabled = true;
+
+    static {
+        try {
+            CameraServerCvJNI.forceLoad();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to load native libraries!", e);
+        }
+    }
     
     /**
      * Constructs a handle for simulating {@link PhotonCamera} values.
@@ -101,33 +118,6 @@ public class PhotonCameraSim {
      */
     public PhotonCameraSim(PhotonCamera camera) {
         this(camera, CameraProperties.PERFECT_90DEG);
-    }
-    /**
-     * Constructs a handle for simulating {@link PhotonCamera} values.
-     * Processing simulated targets through this class will change the associated
-     * PhotonCamera's results.
-     * 
-     * <p>By default, the minimum target area is 100 pixels and there is no maximum sight range.
-     *
-     * @param camera The camera to be simulated
-     * @param prop Properties of this camera such as FOV and FPS
-     */
-    public PhotonCameraSim(PhotonCamera camera, CameraProperties prop) {
-        this.cam = camera;
-        this.prop = prop;
-        setMinTargetAreaPixels(kDefaultMinAreaPx);
-        
-        var rootTable = camera.rootTable;
-        latencyMillisEntry = rootTable.getEntry("latencyMillis");
-        hasTargetEntry = rootTable.getEntry("hasTargetEntry");
-        targetPitchEntry = rootTable.getEntry("targetPitchEntry");
-        targetYawEntry = rootTable.getEntry("targetYawEntry");
-        targetAreaEntry = rootTable.getEntry("targetAreaEntry");
-        targetSkewEntry = rootTable.getEntry("targetSkewEntry");
-        targetPoseEntry = rootTable.getEntry("targetPoseEntry");
-        versionEntry = camera.versionEntry;
-        // Sets the version string so that it will always match the current version
-        versionEntry.setString(PhotonVersion.versionString);
     }
     /**
      * Constructs a handle for simulating {@link PhotonCamera} values.
@@ -148,6 +138,39 @@ public class PhotonCameraSim {
         this(camera, prop);
         this.minTargetAreaPercent = minTargetAreaPercent;
         this.maxSightRangeMeters = maxSightRangeMeters;
+    }
+    /**
+     * Constructs a handle for simulating {@link PhotonCamera} values.
+     * Processing simulated targets through this class will change the associated
+     * PhotonCamera's results.
+     * 
+     * <p>By default, the minimum target area is 100 pixels and there is no maximum sight range.
+     *
+     * @param camera The camera to be simulated
+     * @param prop Properties of this camera such as FOV and FPS
+     */
+    public PhotonCameraSim(PhotonCamera camera, CameraProperties prop) {
+        this.cam = camera;
+        this.prop = prop;
+        setMinTargetAreaPixels(kDefaultMinAreaPx);
+
+        videoSimRaw = CameraServer.putVideo(
+                camera.name+"-raw", prop.getResWidth(), prop.getResHeight());
+        videoSimRaw.setPixelFormat(PixelFormat.kGray);
+        videoSimProcessed = CameraServer.putVideo(
+                camera.name+"-processed", prop.getResWidth(), prop.getResHeight());
+        
+        var rootTable = camera.rootTable;
+        latencyMillisEntry = rootTable.getEntry("latencyMillis");
+        hasTargetEntry = rootTable.getEntry("hasTargetEntry");
+        targetPitchEntry = rootTable.getEntry("targetPitchEntry");
+        targetYawEntry = rootTable.getEntry("targetYawEntry");
+        targetAreaEntry = rootTable.getEntry("targetAreaEntry");
+        targetSkewEntry = rootTable.getEntry("targetSkewEntry");
+        targetPoseEntry = rootTable.getEntry("targetPoseEntry");
+        versionEntry = camera.versionEntry;
+        // Sets the version string so that it will always match the current version
+        versionEntry.setString(PhotonVersion.versionString);
     }
 
     public PhotonCamera getCamera() {
@@ -171,9 +194,16 @@ public class PhotonCameraSim {
     public double getMaxSightRangeMeters() {
         return maxSightRangeMeters;
     }
+    public PhotonTargetSortMode getTargetSortMode() {
+        return sortMode;
+    }
 
     public Field2d getDebugCorners() {
         return dbgCorners;
+    }
+
+    public CvSource getVideoSimRaw() {
+        return videoSimRaw;
     }
 
     /**
@@ -197,14 +227,10 @@ public class PhotonCameraSim {
         return canSee;
     }
     /**
-     * Determines if this target can be detected after image projection.
-     * @param areaPercent The target contour's area percentage of the image
+     * Determines if all target corners are inside the camera's image.
      * @param corners The corners of the target as image points(x,y)
-     * @return If the target area is large enough and the corners are inside
-     *     the camera's FOV
-     * @see CameraProperties#getContourAreaPercent(List)
      */
-    public boolean canSeeCorners(double areaPercent, List<TargetCorner> corners) {
+    public boolean canSeeCorners(List<TargetCorner> corners) {
         // corner is outside of resolution
         for(var corner : corners) {
             if(MathUtil.clamp(corner.x, 0, prop.getResWidth()) != corner.x ||
@@ -212,8 +238,7 @@ public class PhotonCameraSim {
                 return false;
             }
         }
-        // target too small
-        return areaPercent >= minTargetAreaPercent;
+        return true;
     }
 
     /**
@@ -263,6 +288,24 @@ public class PhotonCameraSim {
         this.maxSightRangeMeters = rangeMeters;
     }
     /**
+     * Defines the order the targets are sorted in the pipeline result.
+     */
+    public void setTargetSortMode(PhotonTargetSortMode sortMode) {
+        if(sortMode != null) this.sortMode = sortMode;
+    }
+    /**
+     * Sets whether the raw video stream simulation is enabled.
+     */
+    public void enableRawStream(boolean enabled) {
+        videoSimRawEnabled = enabled;
+    }
+    /**
+     * Sets whether the processed video stream simulation is enabled.
+     */
+    public void enableProcessedStream(boolean enabled) {
+        videoSimProcEnabled = enabled;
+    }
+    /**
      * Update the current camera pose given the current robot pose in meters.
      * This is dependent on the robot-to-camera transform, and camera poses are saved over time.
      */
@@ -273,12 +316,19 @@ public class PhotonCameraSim {
         camPoseBuffer.clear();
     }
 
-    public List<PhotonTrackedTarget> process(
-            double latencyMillis, Pose3d cameraPose, Collection<SimVisionTarget> targets) {
-        var visibleTgts = new ArrayList<PhotonTrackedTarget>();
+    public PhotonPipelineResult process(
+            double latencyMillis, Pose3d cameraPose, List<SimVisionTarget> targets) {
+        var detectableTgts = new ArrayList<PhotonTrackedTarget>();
+        var visibleTgts = new TreeMap<Double, Pair<Integer, List<TargetCorner>>>();
         var dbgVisCorners = new ArrayList<TargetCorner>();
         var dbgBestCorners = new ArrayList<TargetCorner>();
 
+        // reset our frame
+        VideoSimUtil.updateVideoProp(videoSimRaw, prop);
+        VideoSimUtil.updateVideoProp(videoSimProcessed, prop);
+        Size videoFrameSize = new Size(prop.getResWidth(), prop.getResHeight());
+        Mat.zeros(videoFrameSize, CvType.CV_8UC1).assignTo(videoSimFrameRaw);
+        
         for(var tgt : targets) {
             // pose isn't visible, skip to next
             if(!canSeeTargetPose(cameraPose, tgt)) continue;
@@ -294,23 +344,30 @@ public class PhotonCameraSim {
                 prop,
                 fieldCorners
             );
+            // save visible tags sorted on distance for stream simulation
+            if(tgt.id >= 0) {
+                visibleTgts.put(
+                    tgt.getPose().getTranslation().getDistance(cameraPose.getTranslation()),
+                    new Pair<Integer,List<TargetCorner>>(tgt.id, targetCorners)
+                );
+            }
             // estimate pixel noise
-            targetCorners = prop.estPixelNoise(targetCorners);
+            var noisyTargetCorners = prop.estPixelNoise(targetCorners);
             // find the 2d yaw/pitch
-            var boundingCenterRot = prop.getPixelRot(targetCorners);
+            var boundingCenterRot = prop.getPixelRot(noisyTargetCorners);
             // find contour area            
-            double areaPercent = prop.getContourAreaPercent(targetCorners);
+            double areaPercent = prop.getContourAreaPercent(noisyTargetCorners);
 
             // projected target can't be detected, skip to next
-            if(!canSeeCorners(areaPercent, targetCorners)) continue;
+            if(!(canSeeCorners(noisyTargetCorners) && areaPercent >= minTargetAreaPercent)) continue;
 
             // only do 3d estimation if we have a planar target
             var pnpSim = new VisionEstimation.PNPResults();
             if(tgt.getModel().isPlanar) {
-                pnpSim = OpenCVHelp.solveTagPNP(prop, tgt.getModel().cornerOffsets, targetCorners);
+                pnpSim = OpenCVHelp.solveTagPNP(prop, tgt.getModel().cornerOffsets, noisyTargetCorners);
             }
 
-            visibleTgts.add(
+            detectableTgts.add(
                 new PhotonTrackedTarget(
                     Math.toDegrees(boundingCenterRot.getZ()),
                     -Math.toDegrees(boundingCenterRot.getY()),
@@ -320,14 +377,39 @@ public class PhotonCameraSim {
                     pnpSim.best,
                     pnpSim.alt,
                     pnpSim.ambiguity,
-                    targetCorners
+                    noisyTargetCorners
                 )
             );
 
-            dbgVisCorners.addAll(targetCorners);
-            if(dbgBestCorners.size()==0) dbgBestCorners.addAll(targetCorners);
+            dbgVisCorners.addAll(noisyTargetCorners);
+            if(dbgBestCorners.size()==0) dbgBestCorners.addAll(noisyTargetCorners);
         }
-
+        // render visible tags to raw video frame
+        if(videoSimRawEnabled) {
+            for(var detect : visibleTgts.descendingMap().values()) {
+                VideoSimUtil.warp16h5TagImage(
+                    detect.getFirst(),
+                    OpenCVHelp.targetCornersToMat(detect.getSecond()),
+                    videoSimFrameRaw, true
+                );
+            }
+            videoSimRaw.putFrame(videoSimFrameRaw);
+        }
+        else videoSimRaw.setConnectionStrategy(ConnectionStrategy.kForceClose);
+        // draw/annotate tag detection outline on processed view
+        if(videoSimProcEnabled) {
+            Imgproc.cvtColor(videoSimFrameRaw, videoSimFrameProcessed, Imgproc.COLOR_GRAY2BGR);
+            for(var tag : detectableTgts) {
+                VideoSimUtil.drawTagDetection(
+                    tag.getFiducialId(),
+                    OpenCVHelp.targetCornersToMat(tag.getCorners()),
+                    videoSimFrameProcessed
+                );
+            }
+            videoSimProcessed.putFrame(videoSimFrameProcessed);
+        }
+        else videoSimProcessed.setConnectionStrategy(ConnectionStrategy.kForceClose);        
+        
         dbgCorners.getObject("corners").setPoses(
             prop.getPixelFraction(dbgVisCorners)
                 .stream()
@@ -352,38 +434,26 @@ public class PhotonCameraSim {
         );
 
         // put this simulated data to NT
-        submitProcessedFrame(latencyMillis, PhotonTargetSortMode.Largest, visibleTgts);
-        return visibleTgts;
+        if (sortMode != null) {
+            detectableTgts.sort(sortMode.getComparator());
+        }
+        var result = new PhotonPipelineResult(latencyMillis, detectableTgts);
+        submitProcessedFrame(result);
+        return result;
     }
 
     /**
      * Simulate one processed frame of vision data, putting one result to NT.
      *
-     * @param latencyMillis Latency of the provided frame
-     * @param sortMode Order in which to sort targets
-     * @param targetList List of targets detected
+     * @param result The pipeline result to submit
      */
-    public void submitProcessedFrame(
-            double latencyMillis, PhotonTargetSortMode sortMode, List<PhotonTrackedTarget> targetList) {
-        if (sortMode != null) {
-            targetList.sort(sortMode.getComparator());
-        }
-        submitProcessedFrame(latencyMillis, targetList);
-    }
-    /**
-     * Simulate one processed frame of vision data, putting one result to NT.
-     *
-     * @param latencyMillis Latency of the provided frame
-     * @param targetList List of targets detected
-     */
-    public void submitProcessedFrame(double latencyMillis, List<PhotonTrackedTarget> targetList) {
-        latencyMillisEntry.setDouble(latencyMillis);
-        PhotonPipelineResult newResult = new PhotonPipelineResult(latencyMillis, targetList);
-        var newPacket = new Packet(newResult.getPacketSize());
-        newResult.populatePacket(newPacket);
+    public void submitProcessedFrame(PhotonPipelineResult result) {
+        latencyMillisEntry.setDouble(result.getLatencyMillis());
+        var newPacket = new Packet(result.getPacketSize());
+        result.populatePacket(newPacket);
         cam.rawBytesEntry.setRaw(newPacket.getData());
 
-        boolean hasTargets = newResult.hasTargets();
+        boolean hasTargets = result.hasTargets();
         hasTargetEntry.setBoolean(hasTargets);
         if (!hasTargets) {
             targetPitchEntry.setDouble(0.0);
@@ -392,7 +462,7 @@ public class PhotonCameraSim {
             targetPoseEntry.setDoubleArray(new double[] {0.0, 0.0, 0.0});
             targetSkewEntry.setDouble(0.0);
         } else {
-            var bestTarget = newResult.getBestTarget();
+            var bestTarget = result.getBestTarget();
 
             targetPitchEntry.setDouble(bestTarget.getPitch());
             targetYawEntry.setDouble(bestTarget.getYaw());

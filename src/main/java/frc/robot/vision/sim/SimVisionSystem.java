@@ -37,6 +37,7 @@ import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import frc.robot.util.LogUtil;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -72,6 +73,12 @@ public class SimVisionSystem {
      */
     public PhotonCameraSim getCameraSim(String name) {
         return camSimMap.get(name);
+    }
+    /**
+     * Get all of the simulated cameras.
+     */
+    public Collection<PhotonCameraSim> getCameraSims() {
+        return camSimMap.values();
     }
     /**
      * Get a simulated camera's position relative to the robot.
@@ -276,9 +283,9 @@ public class SimVisionSystem {
             );
 
             // update camera's visible targets
-            var trackedTargets = camSim.process(latencyMillis, lateCameraPose, allTargets);
+            var camResult = camSim.process(latencyMillis, lateCameraPose, allTargets);
             // display results
-            for(var target : trackedTargets) {
+            for(var target : camResult.getTargets()) {
                 visibleTargets.add(
                     lateCameraPose.transformBy(target.getBestCameraToTarget())
                 );

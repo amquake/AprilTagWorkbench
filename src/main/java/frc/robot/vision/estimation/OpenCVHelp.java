@@ -125,6 +125,9 @@ public final class OpenCVHelp {
         return rotationEDNtoNWU(new Rotation3d(axis.div(axis.norm()), axis.norm()));
     }
     
+    public static MatOfPoint2f targetCornersToMat(List<TargetCorner> corners) {
+        return targetCornersToMat(corners.toArray(TargetCorner[]::new));
+    }
     public static MatOfPoint2f targetCornersToMat(TargetCorner... corners) {
         var points = new Point[corners.length];
         for(int i=0; i<corners.length; i++) {
@@ -253,7 +256,7 @@ public final class OpenCVHelp {
      * @return The undistorted image points
      */
     public static List<TargetCorner> undistortPoints(CameraProperties camProp, List<TargetCorner> corners) {
-        var points_in = targetCornersToMat(corners.toArray(new TargetCorner[0]));
+        var points_in = targetCornersToMat(corners);
         var points_out = new MatOfPoint2f();
         var cameraMatrix = matrixToMat(camProp.getIntrinsics().getStorage());
         var distCoeffs = matrixToMat(camProp.getDistCoeffs().getStorage());
@@ -277,7 +280,7 @@ public final class OpenCVHelp {
      * @return Rectangle bounding the contour created by the given corners
      */
     public static RotatedRect getMinAreaRect(List<TargetCorner> corners) {
-        var corn = targetCornersToMat(corners.toArray(new TargetCorner[0]));
+        var corn = targetCornersToMat(corners);
         var rect = Imgproc.minAreaRect(corn);
         corn.release();
         return rect;
@@ -290,7 +293,7 @@ public final class OpenCVHelp {
      * @return Area in pixels (units of corner x/y)
      */
     public static double getContourAreaPx(List<TargetCorner> corners) {
-        var temp = targetCornersToMat(corners.toArray(new TargetCorner[0]));
+        var temp = targetCornersToMat(corners);
         var corn = new MatOfPoint(temp.toArray());
         temp.release();
         
@@ -341,7 +344,7 @@ public final class OpenCVHelp {
         imageCorners = reorderCircular(imageCorners, false, 2);
         // translate to opencv classes
         var objectPoints = translationToTvec(modelTrls.toArray(new Translation3d[0]));
-        var imagePoints = targetCornersToMat(imageCorners.toArray(new TargetCorner[0]));
+        var imagePoints = targetCornersToMat(imageCorners);
         var cameraMatrix = matrixToMat(camProp.getIntrinsics().getStorage());
         var distCoeffs = matrixToMat(camProp.getDistCoeffs().getStorage());
         var rvecs = new ArrayList<Mat>();
@@ -407,7 +410,7 @@ public final class OpenCVHelp {
             CameraProperties camProp, List<Translation3d> objectTrls, List<TargetCorner> imageCorners) {
         // translate to opencv classes
         var objectPoints = translationToTvec(objectTrls.toArray(new Translation3d[0]));
-        var imagePoints = targetCornersToMat(imageCorners.toArray(new TargetCorner[0]));
+        var imagePoints = targetCornersToMat(imageCorners);
         var cameraMatrix = matrixToMat(camProp.getIntrinsics().getStorage());
         var distCoeffs = matrixToMat(camProp.getDistCoeffs().getStorage());
         var rvecs = new ArrayList<Mat>();
@@ -449,7 +452,7 @@ public final class OpenCVHelp {
             CameraProperties camProp, List<Translation3d> objectTrls, List<TargetCorner> imageCorners) {
         // translate to opencv classes
         var objectPoints = translationToTvec(objectTrls.toArray(new Translation3d[0]));
-        var imagePoints = targetCornersToMat(imageCorners.toArray(new TargetCorner[0]));
+        var imagePoints = targetCornersToMat(imageCorners);
         var cameraMatrix = matrixToMat(camProp.getIntrinsics().getStorage());
         var distCoeffs = matrixToMat(camProp.getDistCoeffs().getStorage());
         var rvec = Mat.zeros(3, 1, CvType.CV_32F);
