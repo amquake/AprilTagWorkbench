@@ -30,6 +30,10 @@ https://user-images.githubusercontent.com/7953350/208897447-8bbeec43-0c06-4829-9
 
 https://user-images.githubusercontent.com/7953350/208894497-d57316be-3e7c-4d87-90ec-8996faea18ab.mp4
 
+- Simulating camera video streams
+
+https://user-images.githubusercontent.com/7953350/210769846-e5a073dd-0d96-40e7-96b1-418e4818fab5.mp4
+
 ------
 
 ## Related
