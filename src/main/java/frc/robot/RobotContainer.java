@@ -88,7 +88,7 @@ public class RobotContainer {
         // visionSim.addCamera(
         //     new PhotonCameraSim(
         //         camera2,
-        //         SimCamProperties.PI4_PICAM2_480p
+        //         CameraProperties.PI4_PICAM2_480p
         //     ),
         //     new Transform3d( // robot to camera
         //         new Translation3d(
