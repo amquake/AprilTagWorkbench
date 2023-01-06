@@ -2,8 +2,8 @@
 
 **(VERY WIP)**
 
-[wpilib-beta-7]
-[photonlib-beta-6]
+[wpilib-2023.1.1]
+[photonlib-beta-8-5-gbde023c0]
 
 -----
 
