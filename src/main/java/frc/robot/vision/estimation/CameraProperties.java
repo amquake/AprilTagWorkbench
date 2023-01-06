@@ -1,11 +1,15 @@
 package frc.robot.vision.estimation;
 
+import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Random;
 import java.util.stream.Collectors;
 
 import org.photonvision.targeting.PhotonTrackedTarget;
 import org.photonvision.targeting.TargetCorner;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.Nat;
@@ -47,9 +51,78 @@ public class CameraProperties {
     /**
      * Default constructor which is the same as {@link #PERFECT_90DEG}
      */
-    public CameraProperties(){
+    public CameraProperties() {
         setCalibration(960, 720, Rotation2d.fromDegrees(90));
     };
+    /**
+     * Reads camera properties from a photonvision <code>config.json</code> file.
+     * This is only the resolution, camera intrinsics, distortion coefficients,
+     * and average/std. dev. pixel error. Other camera properties must be set.
+     * 
+     * @param path Path to the <code>config.json</code> file
+     * @param width The width of the desired resolution in the JSON
+     * @param height The height of the desired resolution in the JSON
+     * @throws IOException If reading the JSON fails, either from an invalid path
+     *     or a missing/invalid calibrated resolution.
+     */
+    public CameraProperties(String path, int width, int height) throws IOException {
+        this(Path.of(path), width, height);
+    }
+    /**
+     * Reads camera properties from a photonvision <code>config.json</code> file.
+     * This is only the resolution, camera intrinsics, distortion coefficients,
+     * and average/std. dev. pixel error. Other camera properties must be set.
+     * 
+     * @param path Path to the <code>config.json</code> file
+     * @param width The width of the desired resolution in the JSON
+     * @param height The height of the desired resolution in the JSON
+     * @throws IOException If reading the JSON fails, either from an invalid path
+     *     or a missing/invalid calibrated resolution.
+     */
+    public CameraProperties(Path path, int width, int height) throws IOException {
+        var mapper = new ObjectMapper();
+        var json = mapper.readTree(path.toFile());
+        json = json.get("calibrations");
+        boolean success = false;
+        try {
+            for(int i = 0; i < json.size() && !success; i++) {
+                // check if this calibration entry is our desired resolution
+                var calib = json.get(i);
+                int jsonWidth = calib.get("resolution").get("width").asInt();
+                int jsonHeight = calib.get("resolution").get("height").asInt();
+                if(jsonWidth != width || jsonHeight != height) continue;
+                // get the relevant calibration values
+                var jsonIntrinsicsNode = calib.get("cameraIntrinsics").get("data");
+                double[] jsonIntrinsics = new double[jsonIntrinsicsNode.size()];
+                for(int j = 0; j < jsonIntrinsicsNode.size(); j++) {
+                    jsonIntrinsics[j] = jsonIntrinsicsNode.get(j).asDouble();
+                }
+                var jsonDistortNode = calib.get("cameraExtrinsics").get("data");
+                double[] jsonDistortion = new double[jsonDistortNode.size()];
+                for(int j = 0; j < jsonDistortNode.size(); j++) {
+                    jsonDistortion[j] = jsonDistortNode.get(j).asDouble();
+                }
+                var jsonViewErrors = calib.get("perViewErrors");
+                double jsonAvgError = 0;
+                for(int j = 0; j < jsonViewErrors.size(); j++) {
+                    jsonAvgError += jsonViewErrors.get(j).asDouble();
+                }
+                jsonAvgError /= jsonViewErrors.size();
+                double jsonErrorStdDev = calib.get("standardDeviation").asDouble();
+                // assign the read JSON values to this CameraProperties
+                setCalibration(
+                    jsonWidth, jsonHeight,
+                    Matrix.mat(Nat.N3(), Nat.N3()).fill(jsonIntrinsics),
+                    Matrix.mat(Nat.N5(), Nat.N1()).fill(jsonDistortion)
+                );
+                setCalibError(jsonAvgError, jsonErrorStdDev);
+                success = true;
+            }
+        } catch(Exception e) {
+            throw new IOException("Invalid calibration JSON");
+        }
+        if(!success) throw new IOException("Requested resolution not found in calibration");
+    }
 
     public void setRandomSeed(long seed) {
         rand.setSeed(seed);
