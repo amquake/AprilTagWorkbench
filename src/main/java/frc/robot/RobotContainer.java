@@ -85,6 +85,7 @@ public class RobotContainer {
                 )
             )
         );
+        camera2.setVersionCheckEnabled(false);
         // visionSim.addCamera(
         //     new PhotonCameraSim(
         //         camera2,
@@ -150,20 +151,20 @@ public class RobotContainer {
         
         controller.x()
             .whileTrue(run(()->{
-                var cameraSim = visionSim.getCameraSim(camera1.name);
+                var cameraSim = visionSim.getCameraSim(camera1.getName());
                 var dist = cameraSim.prop.getDistCoeffs();
                 cameraSim.prop.setDistortionCoeffs(dist.plus(0.001));
             }));
         controller.b()
             .whileTrue(run(()->{
-                var cameraSim = visionSim.getCameraSim(camera1.name);
+                var cameraSim = visionSim.getCameraSim(camera1.getName());
                 var dist = cameraSim.prop.getDistCoeffs();
                 cameraSim.prop.setDistortionCoeffs(dist.plus(-0.001));
             }));
 
         controller.y()
             .whileTrue(run(()->{
-                var cameraSim = visionSim.getCameraSim(camera1.name);
+                var cameraSim = visionSim.getCameraSim(camera1.getName());
                 visionSim.adjustCamera(cameraSim,
                     new Transform3d(new Translation3d(), new Rotation3d(0, -0.01, 0))
                             .plus(visionSim.getRobotToCamera(cameraSim))
@@ -171,7 +172,7 @@ public class RobotContainer {
             }));
         controller.a()
             .whileTrue(run(()->{
-                var cameraSim = visionSim.getCameraSim(camera1.name);
+                var cameraSim = visionSim.getCameraSim(camera1.getName());
                 visionSim.adjustCamera(cameraSim,
                 new Transform3d(new Translation3d(), new Rotation3d(0, 0.01, 0))
                         .plus(visionSim.getRobotToCamera(cameraSim))
@@ -219,11 +220,11 @@ public class RobotContainer {
         boolean updated = false;
         for(int i = 0; i < cameras.size(); i++) {
             var camera = cameras.get(i);
-            var cameraSim = visionSim.getCameraSim(camera.name);
+            var cameraSim = visionSim.getCameraSim(camera.getName());
             var robotToCamera = visionSim.getRobotToCamera(cameraSim);
             var result = camera.getLatestResult();
 
-            if(result.equals(lastResults.get(i))) continue;
+            if(result.getTimestampSeconds() == lastResults.get(i).getTimestampSeconds()) continue;
             else {
                 lastResults.set(i, result);
                 updated = true;

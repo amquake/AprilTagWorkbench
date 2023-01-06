@@ -259,6 +259,11 @@
     },
     "Retained Values": {
       "open": false
+    },
+    "transitory": {
+      "photonvision": {
+        "open": true
+      }
     }
   }
 }

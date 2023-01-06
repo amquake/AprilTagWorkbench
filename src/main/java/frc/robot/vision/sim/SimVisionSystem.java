@@ -101,10 +101,10 @@ public class SimVisionSystem {
      * @param robotToCamera The transform from the robot pose to the camera pose
      */
     public void addCamera(PhotonCameraSim cameraSim, Transform3d robotToCamera) {
-        var existing = camSimMap.putIfAbsent(cameraSim.getCamera().name, cameraSim);
+        var existing = camSimMap.putIfAbsent(cameraSim.getCamera().getName(), cameraSim);
         if(existing == null) {
             SmartDashboard.putData(
-                tableName+"/"+cameraSim.getCamera().name+"/Sim Corners",
+                tableName+"/"+cameraSim.getCamera().getName()+"/Sim Corners",
                 cameraSim.getDebugCorners()
             );
         }
@@ -123,7 +123,7 @@ public class SimVisionSystem {
      * @return If the camera was present and removed
      */
     public boolean removeCamera(PhotonCameraSim cameraSim) {
-        boolean success = camSimMap.remove(cameraSim.getCamera().name) != null;
+        boolean success = camSimMap.remove(cameraSim.getCamera().getName()) != null;
         camTrfMap.remove(cameraSim);
         return success;
     }
@@ -278,7 +278,7 @@ public class SimVisionSystem {
             Pose3d lateCameraPose = camSim.getCameraPose(latencyMillis / 1000.0);
             cameraPose2ds.add(lateCameraPose.toPose2d());
             SmartDashboard.putNumberArray(
-                tableName+"/"+camSim.getCamera().name+"/LatePose3d",
+                tableName+"/"+camSim.getCamera().getName()+"/LatePose3d",
                 LogUtil.toPoseArray3d(lateCameraPose)
             );
 

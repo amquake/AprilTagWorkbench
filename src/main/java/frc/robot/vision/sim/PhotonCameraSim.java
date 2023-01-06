@@ -37,6 +37,7 @@ import org.opencv.imgproc.Imgproc;
 import org.photonvision.PhotonTargetSortMode;
 import org.photonvision.PhotonVersion;
 import org.photonvision.common.dataflow.structures.Packet;
+import org.photonvision.common.networktables.NTTopicSet;
 import org.photonvision.targeting.PhotonPipelineResult;
 import org.photonvision.targeting.PhotonTrackedTarget;
 import org.photonvision.targeting.TargetCorner;
@@ -64,14 +65,9 @@ import frc.robot.vision.util.VideoSimUtil;
 @SuppressWarnings("unused")
 public class PhotonCameraSim {
     private final PhotonCamera cam;
-    private final NetworkTableEntry latencyMillisEntry;
-    private final NetworkTableEntry hasTargetEntry;
-    private final NetworkTableEntry targetPitchEntry;
-    private final NetworkTableEntry targetYawEntry;
-    private final NetworkTableEntry targetAreaEntry;
-    private final NetworkTableEntry targetSkewEntry;
-    private final NetworkTableEntry targetPoseEntry;
-    private final NetworkTableEntry versionEntry;
+
+    NTTopicSet ts = new NTTopicSet();
+    private long heartbeatCounter = 0;
 
     /**
      * This simulated camera's {@link CameraProperties}
@@ -155,22 +151,15 @@ public class PhotonCameraSim {
         setMinTargetAreaPixels(kDefaultMinAreaPx);
 
         videoSimRaw = CameraServer.putVideo(
-                camera.name+"-raw", prop.getResWidth(), prop.getResHeight());
+                camera.getName()+"-raw", prop.getResWidth(), prop.getResHeight());
         videoSimRaw.setPixelFormat(PixelFormat.kGray);
         videoSimProcessed = CameraServer.putVideo(
-                camera.name+"-processed", prop.getResWidth(), prop.getResHeight());
+                camera.getName()+"-processed", prop.getResWidth(), prop.getResHeight());
         
         var rootTable = camera.rootTable;
-        latencyMillisEntry = rootTable.getEntry("latencyMillis");
-        hasTargetEntry = rootTable.getEntry("hasTargetEntry");
-        targetPitchEntry = rootTable.getEntry("targetPitchEntry");
-        targetYawEntry = rootTable.getEntry("targetYawEntry");
-        targetAreaEntry = rootTable.getEntry("targetAreaEntry");
-        targetSkewEntry = rootTable.getEntry("targetSkewEntry");
-        targetPoseEntry = rootTable.getEntry("targetPoseEntry");
-        versionEntry = camera.versionEntry;
-        // Sets the version string so that it will always match the current version
-        versionEntry.setString(PhotonVersion.versionString);
+        ts.removeEntries();
+        ts.subTable = rootTable;
+        ts.updateEntries();        
     }
 
     public PhotonCamera getCamera() {
@@ -448,32 +437,35 @@ public class PhotonCameraSim {
      * @param result The pipeline result to submit
      */
     public void submitProcessedFrame(PhotonPipelineResult result) {
-        latencyMillisEntry.setDouble(result.getLatencyMillis());
+        ts.latencyMillisEntry.set(result.getLatencyMillis());
+
         var newPacket = new Packet(result.getPacketSize());
         result.populatePacket(newPacket);
-        cam.rawBytesEntry.setRaw(newPacket.getData());
+        ts.rawBytesEntry.set(newPacket.getData());
 
         boolean hasTargets = result.hasTargets();
-        hasTargetEntry.setBoolean(hasTargets);
+        ts.hasTargetEntry.set(hasTargets);
         if (!hasTargets) {
-            targetPitchEntry.setDouble(0.0);
-            targetYawEntry.setDouble(0.0);
-            targetAreaEntry.setDouble(0.0);
-            targetPoseEntry.setDoubleArray(new double[] {0.0, 0.0, 0.0});
-            targetSkewEntry.setDouble(0.0);
+            ts.targetPitchEntry.set(0.0);
+            ts.targetYawEntry.set(0.0);
+            ts.targetAreaEntry.set(0.0);
+            ts.targetPoseEntry.set(new double[] {0.0, 0.0, 0.0});
+            ts.targetSkewEntry.set(0.0);
         } else {
             var bestTarget = result.getBestTarget();
 
-            targetPitchEntry.setDouble(bestTarget.getPitch());
-            targetYawEntry.setDouble(bestTarget.getYaw());
-            targetAreaEntry.setDouble(bestTarget.getArea());
-            targetSkewEntry.setDouble(bestTarget.getSkew());
+            ts.targetPitchEntry.set(bestTarget.getPitch());
+            ts.targetYawEntry.set(bestTarget.getYaw());
+            ts.targetAreaEntry.set(bestTarget.getArea());
+            ts.targetSkewEntry.set(bestTarget.getSkew());
 
             var transform = bestTarget.getBestCameraToTarget();
             double[] poseData = {
                 transform.getX(), transform.getY(), transform.getRotation().toRotation2d().getDegrees()
             };
-            targetPoseEntry.setDoubleArray(poseData);
+            ts.targetPoseEntry.set(poseData);
         }
+
+        ts.heartbeatPublisher.set(heartbeatCounter++);
     }
 }

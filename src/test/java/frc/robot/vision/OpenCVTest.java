@@ -95,11 +95,11 @@ public class OpenCVTest {
         var yawDiff = yaw2d.minus(new Rotation2d(boundingCenterRot1.getZ()));
         var pitchDiff = pitch2d.minus(new Rotation2d(boundingCenterRot1.getY()));
         assertTrue(yawDiff.getRadians() < 0, "2d points don't follow yaw");
-        assertTrue(pitchDiff.unaryMinus().getRadians() < 0, "2d points don't follow pitch");
+        assertTrue(pitchDiff.getRadians() < 0, "2d points don't follow pitch");
         var actualRelation = new CameraTargetRelation(cameraPose, target.getPose());
         assertEquals(
             actualRelation.camToTargPitch.getDegrees(),
-            pitchDiff.unaryMinus().getDegrees() * Math.cos(yaw2d.getRadians()), // adjust for spherical perspective
+            pitchDiff.getDegrees() * Math.cos(yaw2d.getRadians()), // adjust for spherical perspective
             kRotDeltaDeg,
             "2d pitch doesn't match 3d"
         );
