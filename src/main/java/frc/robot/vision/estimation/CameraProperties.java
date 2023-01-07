@@ -169,10 +169,11 @@ public class CameraProperties {
         this.errorStdDevPx = errorStdDevPx;
     }
     /**
-     * @param fps The average frames per second the camera should process at
+     * @param fps The average frames per second the camera should process at.
+     *     <b>Exposure time limits FPS if set!</b>
      */
     public void setFPS(double fps) {
-        this.frameSpeedMs = 1000.0 / fps;
+        this.frameSpeedMs = Math.max(1000.0 / fps, exposureTimeMs);
     }
     /**
      * @param exposureTimeMs The amount of time the "shutter" is open for one frame.
@@ -180,6 +181,7 @@ public class CameraProperties {
      */
     public void setExposureTimeMs(double exposureTimeMs) {
         this.exposureTimeMs = exposureTimeMs;
+        frameSpeedMs = Math.max(frameSpeedMs, exposureTimeMs);
     }
     /**
      * @param avgLatencyMs The average latency (image capture -> data) in milliseconds
