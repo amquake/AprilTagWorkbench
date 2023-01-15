@@ -9,11 +9,16 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.photonvision.CameraProperties;
+import org.photonvision.PhotonCamera;
+import org.photonvision.PhotonCameraSim;
+import org.photonvision.VisionSystemSim;
 import org.photonvision.targeting.PhotonPipelineResult;
 import org.photonvision.targeting.TargetCorner;
 
 import edu.wpi.first.apriltag.AprilTag;
 import edu.wpi.first.apriltag.AprilTagFieldLayout;
+import edu.wpi.first.apriltag.AprilTagFields;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -30,11 +35,7 @@ import frc.robot.auto.AutoOptions;
 import frc.robot.common.OCXboxController;
 import frc.robot.subsystems.drivetrain.SwerveDrive;
 import frc.robot.util.LogUtil;
-import frc.robot.vision.estimation.CameraProperties;
 import frc.robot.vision.estimation.VisionEstimation;
-import frc.robot.vision.sim.PhotonCamera;
-import frc.robot.vision.sim.PhotonCameraSim;
-import frc.robot.vision.sim.SimVisionSystem;
 
 public class RobotContainer {
     private final SwerveDrive drivetrain = new SwerveDrive();
@@ -51,7 +52,7 @@ public class RobotContainer {
     private final PhotonCamera camera2;
     private final List<PhotonCamera> cameras;
     private List<PhotonPipelineResult> lastResults;
-    private final SimVisionSystem visionSim;
+    private final VisionSystemSim visionSim;
 
     private boolean correcting = false;
     
@@ -63,14 +64,19 @@ public class RobotContainer {
         camera1 = new PhotonCamera(instance, "front");
         camera2 = new PhotonCamera(instance, "back");
         cameras = List.of(camera1, camera2);
+        PhotonCamera.setVersionCheckEnabled(false);
         lastResults = new ArrayList<>(cameras.size());
         cameras.forEach(c -> lastResults.add(new PhotonPipelineResult()));
 
-        visionSim = new SimVisionSystem("main");
+        
+        visionSim = new VisionSystemSim("main");
+        // var testprop = new CameraProperties();
+        // try{testprop = new CameraProperties("config.json", 640, 480);} catch(Exception e){e.printStackTrace();}
         visionSim.addCamera(
             new PhotonCameraSim(
                 camera1,
-                CameraProperties.PI4_PICAM2_480p
+                // testprop
+                CameraProperties.LL2_640_480()
             ),
             new Transform3d( // robot to camera
                 new Translation3d(
@@ -85,7 +91,7 @@ public class RobotContainer {
                 )
             )
         );
-        camera2.setVersionCheckEnabled(false);
+        // visionSim.getCameraSim("front").ifPresent(camsim -> camsim.enableRawStream(false));
         // visionSim.addCamera(
         //     new PhotonCameraSim(
         //         camera2,
@@ -106,6 +112,7 @@ public class RobotContainer {
         // );            
 
         try {
+            // tagLayout = AprilTagFieldLayout.loadFromResource(AprilTagFields.k2023ChargedUp.m_resourceFile);
             tagLayout = new AprilTagFieldLayout("2022-taglayout.json");
         } catch (IOException e){
             e.printStackTrace();
@@ -151,32 +158,37 @@ public class RobotContainer {
         
         controller.x()
             .whileTrue(run(()->{
-                var cameraSim = visionSim.getCameraSim(camera1.getName());
-                var dist = cameraSim.prop.getDistCoeffs();
-                cameraSim.prop.setDistortionCoeffs(dist.plus(0.001));
+                visionSim.getCameraSim(camera1.getName()).ifPresent(camsim -> {
+                    var dist = camsim.prop.getDistCoeffs();
+                    camsim.prop.setDistortionCoeffs(dist.plus(0.001));
+                });
             }));
         controller.b()
             .whileTrue(run(()->{
-                var cameraSim = visionSim.getCameraSim(camera1.getName());
-                var dist = cameraSim.prop.getDistCoeffs();
-                cameraSim.prop.setDistortionCoeffs(dist.plus(-0.001));
+                visionSim.getCameraSim(camera1.getName()).ifPresent(camsim -> {
+                    var dist = camsim.prop.getDistCoeffs();
+                    camsim.prop.setDistortionCoeffs(dist.plus(-0.001));
+                });
             }));
 
         controller.y()
             .whileTrue(run(()->{
-                var cameraSim = visionSim.getCameraSim(camera1.getName());
-                visionSim.adjustCamera(cameraSim,
-                    new Transform3d(new Translation3d(), new Rotation3d(0, -0.01, 0))
-                            .plus(visionSim.getRobotToCamera(cameraSim))
-                );
+                visionSim.getCameraSim(camera1.getName()).ifPresent(camsim -> {
+                    visionSim.adjustCamera(camsim,
+                        new Transform3d(new Translation3d(), new Rotation3d(0, -0.01, 0))
+                            .plus(visionSim.getRobotToCamera(camsim).get())
+                    );
+                });
+                
             }));
         controller.a()
             .whileTrue(run(()->{
-                var cameraSim = visionSim.getCameraSim(camera1.getName());
-                visionSim.adjustCamera(cameraSim,
-                new Transform3d(new Translation3d(), new Rotation3d(0, 0.01, 0))
-                        .plus(visionSim.getRobotToCamera(cameraSim))
-            );
+                visionSim.getCameraSim(camera1.getName()).ifPresent(camsim -> {
+                    visionSim.adjustCamera(camsim,
+                        new Transform3d(new Translation3d(), new Rotation3d(0, 0.01, 0))
+                            .plus(visionSim.getRobotToCamera(camsim).get())
+                    );
+                });
             }));
         
         controller.rightTrigger(0.2)
@@ -220,8 +232,9 @@ public class RobotContainer {
         boolean updated = false;
         for(int i = 0; i < cameras.size(); i++) {
             var camera = cameras.get(i);
-            var cameraSim = visionSim.getCameraSim(camera.getName());
-            var robotToCamera = visionSim.getRobotToCamera(cameraSim);
+            if(visionSim.getCameraSim(camera.getName()).isEmpty()) continue;
+            var cameraSim = visionSim.getCameraSim(camera.getName()).get();
+            var robotToCamera = visionSim.getRobotToCamera(cameraSim).get();
             var result = camera.getLatestResult();
 
             if(result.getTimestampSeconds() == lastResults.get(i).getTimestampSeconds()) continue;
@@ -231,7 +244,7 @@ public class RobotContainer {
             }
 
             for(var target : result.getTargets()) {
-                visCorners.addAll(target.getCorners());
+                visCorners.addAll(target.getDetectedCorners());
                 Pose3d tagPose = tagLayout.getTagPose(target.getFiducialId()).get();
                 // actual layout poses of visible tags
                 knownVisTags.add(new AprilTag(target.getFiducialId(), tagPose));
@@ -241,7 +254,7 @@ public class RobotContainer {
                     target.getFiducialId(),
                     new Pose3d().plus(robotToCamera).plus(camToBest)
                 ));
-                var undistortedTarget = cameraSim.prop.undistort2dTarget(target);
+                var undistortedTarget = target;
                 relVisTagsTrig.addAll(VisionEstimation.estimateTagsTrig(
                     robotToCamera,
                     List.of(undistortedTarget),

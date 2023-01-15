@@ -4,8 +4,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
+import org.photonvision.CameraProperties;
+import org.photonvision.TargetModel;
 import org.photonvision.targeting.PhotonTrackedTarget;
 import org.photonvision.targeting.TargetCorner;
+import org.photonvision.util.OpenCVHelp;
 
 import edu.wpi.first.apriltag.AprilTag;
 import edu.wpi.first.apriltag.AprilTagFieldLayout;
@@ -16,17 +19,11 @@ import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.geometry.Transform3d;
 import edu.wpi.first.math.geometry.Translation3d;
 import edu.wpi.first.math.numbers.N3;
-import edu.wpi.first.math.util.Units;
 import frc.robot.util.MathUtils;
 import frc.robot.util.RotTrlTransform3d;
 import frc.robot.vision.util.PhotonUtils;
 
 public class VisionEstimation {
-
-    public static final TargetModel kTagModel = TargetModel.ofPlanarRect(
-        Units.inchesToMeters(6),
-        Units.inchesToMeters(6)
-    );
 
     /**
      * Uses trigonometry and the known height of the AprilTags on the field to estimate the
@@ -80,7 +77,7 @@ public class VisionEstimation {
         }
         // single-tag pnp
         if(corners.size() == 4) {
-            var camToTag = OpenCVHelp.solveTagPNP(prop, kTagModel.cornerOffsets, corners);
+            var camToTag = OpenCVHelp.solvePNP_SQUARE(prop, TargetModel.kTag16h5.vertices, corners);
             var bestPose = knownTags.get(0).pose.transformBy(camToTag.best.inverse());
             var altPose = new Pose3d();
             if(camToTag.ambiguity != 0) altPose = knownTags.get(0).pose.transformBy(camToTag.alt.inverse());
@@ -94,8 +91,8 @@ public class VisionEstimation {
         // multi-tag pnp
         else {
             var objectTrls = new ArrayList<Translation3d>();
-            for(var tag : knownTags) objectTrls.addAll(kTagModel.getFieldCorners(tag.pose));
-            var camToOrigin = OpenCVHelp.solveTagsPNP(prop, objectTrls, corners);
+            for(var tag : knownTags) objectTrls.addAll(TargetModel.kTag16h5.getFieldVertices(tag.pose));
+            var camToOrigin = OpenCVHelp.solvePNP_SQPNP(prop, objectTrls, corners);
             // var camToOrigin = OpenCVHelp.solveTagsPNPRansac(prop, objectTrls, corners);
             return new PNPResults(
                 camToOrigin.best.inverse(),
@@ -135,8 +132,8 @@ public class VisionEstimation {
             var mTag = measuredTags.get(i);
             var kTag = knownTags.get(i);
             if(useCorners) {
-                measuredTrls.addAll(kTagModel.getFieldCorners(mTag.pose));
-                knownTrls.addAll(kTagModel.getFieldCorners(kTag.pose));
+                measuredTrls.addAll(TargetModel.kTag16h5.getFieldVertices(mTag.pose));
+                knownTrls.addAll(TargetModel.kTag16h5.getFieldVertices(kTag.pose));
             }
             var mTrl = mTag.pose.getTranslation();
             var up = new Translation3d(0, 0, 0.5);
