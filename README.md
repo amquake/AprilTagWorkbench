@@ -3,7 +3,7 @@
 **(VERY WIP)**
 
 [wpilib-2023.1.1]
-[photonlib-beta-8-5-gbde023c0]
+[https://github.com/PhotonVision/photonvision/pull/742]
 
 -----
 
