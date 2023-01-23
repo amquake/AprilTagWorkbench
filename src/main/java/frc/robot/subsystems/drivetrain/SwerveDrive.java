@@ -6,7 +6,6 @@ import java.util.Random;
 
 import edu.wpi.first.math.Matrix;
 import edu.wpi.first.math.VecBuilder;
-import edu.wpi.first.math.controller.HolonomicDriveController;
 import edu.wpi.first.math.controller.PIDController;
 import edu.wpi.first.math.controller.ProfiledPIDController;
 import edu.wpi.first.math.estimator.SwerveDrivePoseEstimator;
@@ -67,8 +66,6 @@ public class SwerveDrive extends SubsystemBase {
         AutoConstants.kPThetaController, 0, AutoConstants.kDThetaController,
         AutoConstants.kThetaControllerConstraints
     );
-    // our auto controller which follows trajectories and adjusts target chassis speeds to reach a desired pose
-    private final HolonomicDriveController pathController = new HolonomicDriveController(xController, yController, thetaController);
 
     private Trajectory logTrajectory;
     
@@ -78,7 +75,6 @@ public class SwerveDrive extends SubsystemBase {
         
         thetaController.enableContinuousInput(-Math.PI, Math.PI);
         thetaController.setTolerance(kThetaPositionTolerance, kThetaVelocityTolerance);
-        pathController.setEnabled(true); // disable for feedforward-only auto
 
         var stateStdDevs = VecBuilder.fill(0.1, 0.1, 0.1);
         var visionStdDevs = VecBuilder.fill(1, 1, 1);
@@ -142,36 +138,20 @@ public class SwerveDrive extends SubsystemBase {
     public boolean drive(double vxMeters, double vyMeters, Rotation2d targetRotation, boolean openLoop){
         // rotation speed
         double rotationRadians = getPose().getRotation().getRadians();
-        double pidOutput = thetaController.calculate(rotationRadians, targetRotation.getRadians());
+        double thetaFeedback = thetaController.calculate(rotationRadians, targetRotation.getRadians());
+        double thetaFF = thetaController.getSetpoint().velocity;
 
         // + translation speed
         ChassisSpeeds targetChassisSpeeds = ChassisSpeeds.fromFieldRelativeSpeeds(
             vxMeters,
             vyMeters,
-            pidOutput,
+            thetaFF + thetaFeedback,
             getHeading()
         );
 
         setChassisSpeeds(targetChassisSpeeds, openLoop, false);
         return thetaController.atGoal();
     }
-    /**
-     * Drive control intended for path following utilizing the {@link #pathController path controller}.
-     * This method always uses closed-loop control on the modules.
-     * @param targetState Trajectory state containing target translation and velocities
-     * @param targetRotation Target rotation independent of trajectory motion
-     */
-    public void drive(Trajectory.State targetState, Rotation2d targetRotation){
-        // determine ChassisSpeeds from path state and positional feedback control from HolonomicDriveController
-        ChassisSpeeds targetChassisSpeeds = pathController.calculate(
-            getPose(),
-            targetState,
-            targetRotation
-        );
-        // command robot to reach the target ChassisSpeeds
-        setChassisSpeeds(targetChassisSpeeds, false, false);
-    }
-
     /**
      * Command the swerve modules to the desired states.
      * Velocites above maximum speed will be downscaled (preserving ratios between modules)
@@ -332,8 +312,17 @@ public class SwerveDrive extends SubsystemBase {
         return kinematics.toChassisSpeeds(getPerfModuleStates());
     }
 
-    public HolonomicDriveController getPathController(){
-        return pathController;
+    public PIDController getXController() {
+        return xController;
+    }
+    public PIDController getYController() {
+        return yController;
+    }
+    public PIDController getRotController() {
+        return new PIDController(thetaController.getP(), thetaController.getI(), thetaController.getD());
+    }
+    public ProfiledPIDController getProfiledRotController() {
+        return thetaController;
     }
 
     public void log(){

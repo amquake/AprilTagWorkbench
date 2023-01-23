@@ -1,7 +1,7 @@
 {
   "fileName": "photonlib.json",
   "name": "photonlib",
-  "version": "dev-v2023.1.2-25-g82fba019",
+  "version": "dev-v2023.1.2-33-g8d9f23c2",
   "uuid": "515fe07e-bfc6-11fa-b3de-0242ac130004 ",
   "mavenUrls": [
     "https://maven.photonvision.org/repository/internal",
@@ -13,7 +13,7 @@
     {
       "groupId": "org.photonvision",
       "artifactId": "PhotonLib-cpp",
-      "version": "dev-v2023.1.2-25-g82fba019",
+      "version": "dev-v2023.1.2-33-g8d9f23c2",
       "libName": "Photon",
       "headerClassifier": "headers",
       "sharedLibrary": true,
@@ -30,12 +30,12 @@
     {
       "groupId": "org.photonvision",
       "artifactId": "PhotonLib-java",
-      "version": "dev-v2023.1.2-25-g82fba019"
+      "version": "dev-v2023.1.2-33-g8d9f23c2"
     },
     {
       "groupId": "org.photonvision",
       "artifactId": "PhotonTargeting-java",
-      "version": "dev-v2023.1.2-25-g82fba019"
+      "version": "dev-v2023.1.2-33-g8d9f23c2"
     }
   ]
 }

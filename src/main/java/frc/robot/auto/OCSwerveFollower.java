@@ -4,73 +4,75 @@
 
 package frc.robot.auto;
 
+import com.pathplanner.lib.PathConstraints;
+import com.pathplanner.lib.PathPlanner;
 import com.pathplanner.lib.PathPlannerTrajectory;
-import com.pathplanner.lib.PathPlannerTrajectory.PathPlannerState;
+import com.pathplanner.lib.commands.PPSwerveControllerCommand;
 
-import edu.wpi.first.math.geometry.Rotation2d;
-import edu.wpi.first.math.trajectory.Trajectory;
-import edu.wpi.first.wpilibj.Timer;
+import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj2.command.CommandBase;
+import edu.wpi.first.wpilibj2.command.Commands;
 import frc.robot.subsystems.drivetrain.SwerveDrive;
 
-/**
- * Custom implementation of
- * {@link edu.wpi.first.wpilibj2.command.SwerveControllerCommand SwerveControllerCommand}
- * to simplify construction, allow PathPlanner paths, and enable custom logging
- */
 public class OCSwerveFollower extends CommandBase {
-
+    
     private final SwerveDrive drivetrain;
-    private final Trajectory trajectory;
-    private Timer timer = new Timer();
+    private final String pathName;
+    private final PathConstraints constraints;
+    private final boolean resetOdom;
 
-    public OCSwerveFollower(SwerveDrive drivetrain, Trajectory trajectory) {
+    private CommandBase controllerCommand = Commands.none();
+
+    public OCSwerveFollower(
+            SwerveDrive drivetrain, String pathName,
+            PathConstraints constraints, boolean resetOdom) {
         this.drivetrain = drivetrain;
-        this.trajectory = trajectory;
-
-        addRequirements(drivetrain);
+        this.pathName = pathName;
+        this.constraints = constraints;
+        this.resetOdom = resetOdom;
     }
     
-    // Called when the command is initially scheduled.
     @Override
     public void initialize() {
-        timer.reset();
-        timer.start();
-        drivetrain.resetPathController(); // reset theta setpoint between different trajectories
-        drivetrain.logTrajectory(trajectory); // display the trajectory on field2d
+        var path = PathPlanner.loadPath(pathName, constraints);
+        if(path == null) {
+            end(false);
+            return;
+        }
+        var alliancePath = PathPlannerTrajectory.transformTrajectoryForAlliance(
+            path,
+            DriverStation.getAlliance()
+        );
+
+        if(resetOdom) drivetrain.resetOdometry(alliancePath.getInitialHolonomicPose());
+        drivetrain.logTrajectory(alliancePath);
+
+        controllerCommand = new PPSwerveControllerCommand(
+            alliancePath,
+            drivetrain::getPose,
+            drivetrain.getXController(),
+            drivetrain.getYController(),
+            drivetrain.getRotController(),
+            (chassisSpeeds)->drivetrain.setChassisSpeeds(chassisSpeeds, false, true),
+            false,
+            drivetrain
+        );
+        controllerCommand.initialize();
     }
     
-    // Called every time the scheduler runs while the command is scheduled.
     @Override
     public void execute() {
-        double currentTime = timer.get();
-        // The target state of the trajectory right now (the robot's pose and velocity)
-        Trajectory.State targetState = trajectory.sample(currentTime);
-        Rotation2d targetRotation = targetState.poseMeters.getRotation();
-        // Check if we are using PathPlanner trajectories
-        if(trajectory instanceof PathPlannerTrajectory){
-            targetState = ((PathPlannerTrajectory)trajectory).sample(currentTime);
-            targetRotation = ((PathPlannerState)targetState).holonomicRotation;
-        }
-
-        drivetrain.drive(targetState, targetRotation);
-
-        //Pose2d targetPose = targetState.poseMeters;
-        //SmartDashboard.putNumber("Target Heading", targetPose.getRotation().getDegrees());
-        //SmartDashboard.putNumber("Target X", targetPose.getX());
-        //SmartDashboard.putNumber("Target Y", targetPose.getY());
+        controllerCommand.execute();
     }
     
-    // Called once the command ends or is interrupted.
     @Override
     public void end(boolean interrupted) {
-        timer.stop();
+        controllerCommand.end(interrupted);
+        drivetrain.logTrajectory(null);
     }
     
-    // Returns true when the command should end.
     @Override
     public boolean isFinished() {
-        // the path is time parametrized and takes a certain number of seconds
-        return timer.hasElapsed(trajectory.getTotalTimeSeconds());
+        return controllerCommand.isFinished();
     }
 }

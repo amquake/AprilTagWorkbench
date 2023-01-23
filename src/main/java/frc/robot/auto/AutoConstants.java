@@ -1,6 +1,7 @@
 package frc.robot.auto;
 
-import edu.wpi.first.math.trajectory.TrajectoryConfig;
+import com.pathplanner.lib.PathConstraints;
+
 import edu.wpi.first.math.trajectory.TrapezoidProfile;
 import edu.wpi.first.math.util.Units;
 
@@ -26,15 +27,15 @@ public class AutoConstants {
     public static final double kThetaVelocityTolerance = Units.degreesToRadians(10);
 
     // packaged configs for path following
-    public static final TrajectoryConfig kFastSpeedConfig = new TrajectoryConfig(
+    public static final PathConstraints kFastSpeedConfig = new PathConstraints(
         Units.feetToMeters(11), 
         Units.feetToMeters(14)
     );
-    public static final TrajectoryConfig kMediumSpeedConfig = new TrajectoryConfig(
+    public static final PathConstraints kMediumSpeedConfig = new PathConstraints(
         Units.feetToMeters(9), 
         Units.feetToMeters(11)
     );
-    public static final TrajectoryConfig kSlowSpeedConfig = new TrajectoryConfig(
+    public static final PathConstraints kSlowSpeedConfig = new PathConstraints(
         Units.feetToMeters(6), 
         Units.feetToMeters(6)
     );

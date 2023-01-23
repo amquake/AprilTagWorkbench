@@ -1,5 +1,7 @@
 package frc.robot;
 
+import edu.wpi.first.wpilibj.DriverStation;
+import edu.wpi.first.wpilibj.DriverStation.Alliance;
 import edu.wpi.first.wpilibj.smartdashboard.Field2d;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
@@ -8,6 +10,8 @@ import static edu.wpi.first.wpilibj2.command.Commands.*;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
+import java.util.stream.Collectors;
 
 import org.photonvision.CameraProperties;
 import org.photonvision.PhotonCamera;
@@ -19,6 +23,7 @@ import org.photonvision.targeting.TargetCorner;
 import edu.wpi.first.apriltag.AprilTag;
 import edu.wpi.first.apriltag.AprilTagFieldLayout;
 import edu.wpi.first.apriltag.AprilTagFields;
+import edu.wpi.first.apriltag.AprilTagFieldLayout.OriginPosition;
 import edu.wpi.first.math.geometry.Pose2d;
 import edu.wpi.first.math.geometry.Pose3d;
 import edu.wpi.first.math.geometry.Rotation2d;
@@ -46,6 +51,7 @@ public class RobotContainer {
 
     private final Field2d field;
     private AprilTagFieldLayout tagLayout;
+    private Alliance lastAlliance = DriverStation.Alliance.Blue;
 
     private NetworkTableInstance instance;
     private final PhotonCamera camera1;
@@ -112,8 +118,8 @@ public class RobotContainer {
         // );            
 
         try {
-            // tagLayout = AprilTagFieldLayout.loadFromResource(AprilTagFields.k2023ChargedUp.m_resourceFile);
-            tagLayout = new AprilTagFieldLayout("2022-taglayout.json");
+            // tagLayout = new AprilTagFieldLayout("2022-taglayout.json");
+            tagLayout = AprilTagFieldLayout.loadFromResource(AprilTagFields.k2023ChargedUp.m_resourceFile);
         } catch (IOException e){
             e.printStackTrace();
         };
@@ -136,6 +142,21 @@ public class RobotContainer {
     public void init() {
         controller = new OCXboxController(0);
         configureDriverBinds(controller);
+    }
+
+    public void periodic() {
+        var alliance = DriverStation.getAlliance();
+        if(alliance != lastAlliance) {
+            tagLayout.setOrigin(alliance == DriverStation.Alliance.Blue ?
+                OriginPosition.kBlueAllianceWallRightSide
+                :
+                OriginPosition.kRedAllianceWallRightSide
+            );
+            lastAlliance = alliance;
+
+            visionSim.removeVisionTargets("apriltags");
+            visionSim.addVisionTargets(tagLayout);
+        }
     }
 
     public void configureDriverBinds(OCXboxController controller) {

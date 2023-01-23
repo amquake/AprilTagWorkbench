@@ -1,15 +1,16 @@
 package frc.robot.auto;
 
+import com.pathplanner.lib.PathConstraints;
 import com.pathplanner.lib.PathPlanner;
 import com.pathplanner.lib.PathPlannerTrajectory;
-import com.pathplanner.lib.PathPlannerTrajectory.PathPlannerState;
+import com.pathplanner.lib.commands.PPSwerveControllerCommand;
 
-import edu.wpi.first.math.geometry.Pose2d;
-import edu.wpi.first.math.trajectory.Trajectory;
-import edu.wpi.first.math.trajectory.TrajectoryConfig;
+import edu.wpi.first.wpilibj.DriverStation;
 import edu.wpi.first.wpilibj.smartdashboard.SendableChooser;
 import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
 import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.CommandBase;
+
 import static edu.wpi.first.wpilibj2.command.Commands.*;
 import frc.robot.subsystems.drivetrain.SwerveDrive;
 
@@ -26,7 +27,7 @@ public class AutoOptions {
 
         autoOptions.addOption("QuintupleRight",
             sequence(
-                autoFollowTrajectory(
+                new OCSwerveFollower(
                     drivetrain, 
                     "path1", 
                     AutoConstants.kMediumSpeedConfig,
@@ -34,7 +35,7 @@ public class AutoOptions {
                 ),
                 drivetrain.stopC(),
                 waitSeconds(1),
-                autoFollowTrajectory(
+                new OCSwerveFollower(
                     drivetrain, 
                     "path2", 
                     AutoConstants.kMediumSpeedConfig,
@@ -42,43 +43,50 @@ public class AutoOptions {
                 ),
                 drivetrain.stopC(),
                 waitSeconds(1),
-                autoFollowTrajectory(
+                new OCSwerveFollower(
                     drivetrain, 
                     "path3", 
                     AutoConstants.kFastSpeedConfig,
                     false
-                )
+                ),
+                drivetrain.stopC()
             )
         );        
     }
 
     /**
-     * @param trajectories Any number of trajectories to perform in sequence
-     * @return A command suitable for following a sequence of trajectories in autonomous.
-     * The robot pose is reset to the start of the trajectory and {@link OCSwerveFollower} is used to follow it.
+     * Loads this path and then returns a command that follows it. The drivetrain will be
+     * automatically stopped after the path ends.
+     * 
+     * @param drivetrain
+     * @param pathName
+     * @param constraints
+     * @param resetOdom If the odometry should be reset to the first pose in this path
+     * @return
      */
-    private Command autoFollowTrajectory(SwerveDrive drivetrain, Trajectory trajectory, boolean firstTrajectory){
-        final Pose2d initial = (trajectory instanceof PathPlannerTrajectory) ?
-            new Pose2d(
-                trajectory.getInitialPose().getTranslation(),
-                ((PathPlannerState)((PathPlannerTrajectory)trajectory).sample(0)).holonomicRotation)
-            :
-            trajectory.getInitialPose();
-        Command followCommand = new OCSwerveFollower(drivetrain, trajectory);
-        if(firstTrajectory){
-            followCommand = followCommand.beforeStarting(()->drivetrain.resetOdometry(initial));
-        }   
-        return followCommand;
-    }
-    /**
-     * @param config The config for this trajectory defining max velocity and acceleration
-     * @param storedPathNames The names of the PathPlanner paths saved to this project for use in this trajectory
-     * @return A command suitable for following a sequence of trajectories in autonomous.
-     * The robot pose is reset to the start of the trajectory and {@link OCSwerveFollower} is used to follow it.
-     */
-    private Command autoFollowTrajectory(SwerveDrive drivetrain, String storedPathName, TrajectoryConfig config, boolean firstTrajectory){
-        Trajectory trajectory = PathPlanner.loadPath(storedPathName, config.getMaxVelocity(), config.getMaxAcceleration(), config.isReversed());
-        return autoFollowTrajectory(drivetrain, trajectory, firstTrajectory);
+    public static CommandBase loadAndFollow(
+            SwerveDrive drivetrain, String pathName,
+            PathConstraints constraints, boolean resetOdom) {
+        var path = PathPlanner.loadPath(pathName, constraints);
+        if(path == null) return none();
+        var alliancePath = PathPlannerTrajectory.transformTrajectoryForAlliance(
+            path,
+            DriverStation.getAlliance()
+        );
+
+        return new PPSwerveControllerCommand(
+            alliancePath,
+            drivetrain::getPose,
+            drivetrain.getXController(),
+            drivetrain.getYController(),
+            drivetrain.getRotController(),
+            (chassisSpeeds)->drivetrain.setChassisSpeeds(chassisSpeeds, false, true),
+            false,
+            drivetrain
+        ).beforeStarting(()->{
+            if(resetOdom) drivetrain.resetOdometry(alliancePath.getInitialPose());
+            drivetrain.logTrajectory(alliancePath);
+        });
     }
 
     // Network Tables
