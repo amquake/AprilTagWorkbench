@@ -30,6 +30,8 @@ public class OCSwerveFollower extends CommandBase {
         this.pathName = pathName;
         this.constraints = constraints;
         this.resetOdom = resetOdom;
+
+        addRequirements(drivetrain);
     }
     
     @Override
